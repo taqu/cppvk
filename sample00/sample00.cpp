@@ -91,7 +91,7 @@ bool selectQueueFamily(vk::PhysicalDevice& selectedDevice, vk::u32& selectedQueu
     VkQueueFamilyProperties properties[MaxProperties];
 
     vk::PhysicalDevices physicalDevices = instance.enumeratePhysicalDevices();
-    for(vk::u32 i=0; i<physicalDevices.getNumDevices(); ++i){
+    for(vk::u32 i=0; i<physicalDevices.size(); ++i){
         vk::PhysicalDevice& physicalDevice = physicalDevices.getDevice(i);
         vk::u32 countProperties = 0;
         physicalDevice.getPhysicalDeviceQueueFamilyProperties(&countProperties, VLK_NULL);
@@ -114,7 +114,7 @@ bool selectQueueFamily(vk::PhysicalDevice& selectedDevice, vk::u32& selectedQueu
 void printPhysicalDevices(vk::Instance& instance)
 {
     vk::PhysicalDevices physicalDevices = instance.enumeratePhysicalDevices();
-    for(vk::u32 i = 0; i<physicalDevices.getNumDevices(); ++i){
+    for(vk::u32 i = 0; i<physicalDevices.size(); ++i){
         vk::PhysicalDevice& device = physicalDevices.getDevice(i);
 
         //--- VkPhysicalDeviceProperties

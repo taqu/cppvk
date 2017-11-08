@@ -2,13 +2,13 @@ cmake_minimum_required(VERSION 3.6)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug" "Release")
 
-set(ProjectName sample00)
+set(ProjectName sample01)
 project(${ProjectName})
 
 include_directories(AFTER ${CMAKE_CURRENT_SOURCE_DIR})
 
-set(HEADERS "../vk_platform.h;../vulkan.h;../cppvk.h")
-set(SOURCES "../cppvk.cpp;sample00.cpp")
+set(HEADERS "../vk_platform.h;../vulkan.h;../cppvk.h;../Window.h")
+set(SOURCES "../cppvk.cpp;../Window.cpp;sample01.cpp;")
 
 source_group("include" FILES ${HEADERS})
 source_group("src" FILES ${SOURCES})

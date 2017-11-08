@@ -123,21 +123,21 @@ def print_command(name, content):
     elif(ScopeType.INSTANCE == content[0]):
         print('#   if ' + deffuc + 'defined(VLK_EXT_DECL_INSTANCE_MEMBER) && defined(VLK_EXT_IMPL_INSTANCE_MEMBER)')
         print('    inline ' + content[4] + ' VLK_EXT_DECL_INSTANCE_MEMBER(' + name + ')(' + ', '.join(content[2][1:]) + '){')
-        print('        ' + ret + 'VLK_EXT_IMPL_INSTANCE_MEMBER(' + name + ')(VLK_MEMBER_INSTANCE, ', ','.join(content[3][1:]) + ');')
+        print('        ' + ret + 'VLK_EXT_IMPL_INSTANCE_MEMBER(' + name + ')(VLK_MEMBER_INSTANCE,', ', '.join(content[3][1:]) + ');')
         print('    }')
         print('#   endif')
 
     elif(ScopeType.DEVICE == content[0]):
         print('#   if ' + deffuc + 'defined(VLK_EXT_DECL_DEVICE_MEMBER) && defined(VLK_EXT_IMPL_DEVICE_MEMBER)')
         print('    inline ' + content[4] + ' VLK_EXT_DECL_DEVICE_MEMBER(' + name + ')(' + ', '.join(content[2][1:]) + '){')
-        print('        ' + ret + 'VLK_EXT_IMPL_DEVICE_MEMBER(' + name + ')(VLK_MEMBER_DEVICE, ', ','.join(content[3][1:]) + ');')
+        print('        ' + ret + 'VLK_EXT_IMPL_DEVICE_MEMBER(' + name + ')(VLK_MEMBER_DEVICE,', ', '.join(content[3][1:]) + ');')
         print('    }')
         print('#   endif')
 
     elif(ScopeType.PHYSICALDEVICE == content[0]):
         print('#   if ' + deffuc + 'defined(VLK_EXT_DECL_PHYSICALDEVICE_MEMBER) && defined(VLK_EXT_IMPL_PHYSICALDEVICE_MEMBER)')
-        print('    inline ' + content[4] + ' VLK_EXT_DECL_PHYSICALDEVICE_MEMBER(' + name + ')(' + ', '.join(content[2][1:]) + '){')
-        print('        ' + ret + 'VLK_EXT_IMPL_PHYSICALDEVICE_MEMBER(' + name + ')(VLK_MEMBER_PHYSICALDEVICE, ', ','.join(content[3][1:]) + ');')
+        print('    inline ' + content[4] + ' VLK_EXT_DECL_PHYSICALDEVICE_MEMBER(' + name + ')(' + ', '.join(content[2][0:]) + '){')
+        print('        ' + ret + 'VLK_EXT_IMPL_PHYSICALDEVICE_MEMBER(' + name + ')(' + ', '.join(content[3][0:]) + ');')
         print('    }')
         print('#   endif')
 
@@ -225,4 +225,9 @@ print("""
 #undef VLK_EXT_DECL_PHYSICALDEVICE_MEMBER
 #undef VLK_EXT_IMPL_PHYSICALDEVICE_MEMBER
 #undef VLK_MEMBER_PHYSICALDEVICE
+
+#undef VLK_EXT_EXPORTED_MEMBER
+#undef VLK_EXT_INSTANCE_MEMBER
+#undef VLK_EXT_DEVICE_MEMBER
+#undef VLK_EXT_PHYSICALDEVICE_MEMBER
 """)

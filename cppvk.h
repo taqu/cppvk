@@ -10,7 +10,7 @@
 #endif
 
 #ifdef __cplusplus
-#   if 201103L<=_cplusplus || 1900<=_MSC_VER
+#   if 201103L<=__cplusplus || 1900<=_MSC_VER
 #       define VLK_CPP11 1
 #   endif
 #endif
@@ -25,11 +25,9 @@
 #   define VLK_NULL (void*)0
 #endif
 
-#ifdef _WIN32
-#define VK_USE_PLATFORM_WIN32_KHR 1
-#endif
 
 #ifdef _WIN32
+
 #define VLK_DLHANDLE HMODULE
 #define VLK_DLOPEN(path) LoadLibrary((path))
 #define VLK_DLSYM(handle, name) GetProcAddress((handle), (name))
@@ -38,6 +36,7 @@
 #define VLK_VULKANLIB ("vulkan-1.dll")
 
 #else
+
 #define VLK_DLHANDLE void*
 #define VLK_DLOPEN(path) dlopen((path), RTLD_NOW)
 #define VLK_DLSYM(handle, name) dlsym((handle), (name))
@@ -47,6 +46,7 @@
 
 #endif
 
+#define VK_NO_PROTOTYPES 1
 #include "vulkan.h"
 
 namespace vk
@@ -61,10 +61,12 @@ namespace vk
 #endif
 
 #ifdef _MSC_VER
+    typedef char Char;
     typedef __int32 s32;
     typedef unsigned __int32 u32;
 
 #else
+    typedef char Char;
     typedef int32_t s32;
     typedef uint32_t u32;
 #endif
@@ -80,13 +82,15 @@ namespace vk
         return (x0<x1)? x0 : x1;
     }
 
-    //-------------------------------------------------------------------------------
-#define VLK_EXPORTED_FUNCTION(name) extern PFN_ ## name name ## _;
-#define VLK_INSTANCE_FUNCTION(name) extern PFN_ ## name name ## _;
-#define VLK_DEVICE_FUNCTION(name) extern PFN_ ## name name ## _;
-#define VLK_PHYSICALDEVICE_FUNCTION(name) extern PFN_ ## name name ## _;
+    static const u32 MaxProperties = 32;
 
-#define VLK_EXT_EXPORTED_FUNCTION(name) extern PFN_ ## name name ## _;
+    //-------------------------------------------------------------------------------
+#define VLK_EXPORTED_FUNCTION(name) extern PFN_ ## name name;
+#define VLK_INSTANCE_FUNCTION(name) extern PFN_ ## name name;
+#define VLK_DEVICE_FUNCTION(name) extern PFN_ ## name name;
+#define VLK_PHYSICALDEVICE_FUNCTION(name) extern PFN_ ## name name;
+
+#define VLK_EXT_EXPORTED_FUNCTION(name) extern PFN_ ## name name;
 #include "VkFunctions.inc"
 
     //--------------------------------------------------------------
@@ -124,6 +128,95 @@ namespace vk
 
     //--------------------------------------------------------------
     //---
+    //--- ExtensionProperties
+    //---
+    //--------------------------------------------------------------
+    template<u32 MaxCount>
+    class ExtensionProperties
+    {
+    public:
+        ExtensionProperties();
+        ~ExtensionProperties();
+
+        VkResult enumerateInstanceExtensionProperties(const Char* layerName = VLK_NULL);
+        VkResult enumerateDeviceExtensionProperties(VkPhysicalDevice device, const Char* layerName = VLK_NULL);
+
+        inline u32 size() const;
+        inline const VkExtensionProperties& get(u32 index) const;
+
+        /**
+        @return get it index [0,size), otherwise -1
+        @param name ... no null, an extension name to find
+        */
+        s32 find(const Char* name) const;
+    private:
+        ExtensionProperties(const ExtensionProperties&) = delete;
+        ExtensionProperties& operator=(const ExtensionProperties&) = delete;
+
+        u32 numProperties_;
+        VkExtensionProperties properties_[MaxCount];
+    };
+
+    template<u32 MaxCount>
+    ExtensionProperties<MaxCount>::ExtensionProperties()
+        :numProperties_(0)
+    {
+    }
+
+    template<u32 MaxCount>
+    ExtensionProperties<MaxCount>::~ExtensionProperties()
+    {
+    }
+
+    template<u32 MaxCount>
+    VkResult ExtensionProperties<MaxCount>::enumerateInstanceExtensionProperties(const Char* layerName)
+    {
+        numProperties_ = MaxCount;
+        VkResult result = vkEnumerateInstanceExtensionProperties(layerName, &numProperties_, properties_);
+        if(VK_SUCCESS != result){
+            numProperties_ = 0;
+        }
+        return result;
+    }
+
+    template<u32 MaxCount>
+    VkResult ExtensionProperties<MaxCount>::enumerateDeviceExtensionProperties(VkPhysicalDevice device, const Char* layerName)
+    {
+        numProperties_ = MaxCount;
+        VkResult result = vkEnumerateDeviceExtensionProperties(device, layerName, &numProperties_, properties_);
+        if(VK_SUCCESS != result){
+            numProperties_ = 0;
+        }
+        return result;
+    }
+
+    template<u32 MaxCount>
+    inline u32 ExtensionProperties<MaxCount>::size() const
+    {
+        return numProperties_;
+    }
+
+    template<u32 MaxCount>
+    inline const VkExtensionProperties& ExtensionProperties<MaxCount>::get(u32 index) const
+    {
+        VLK_ASSERT(0<=index && index<numProperties_);
+        return properties_[index];
+    }
+
+    template<u32 MaxCount>
+    s32 ExtensionProperties<MaxCount>::find(const Char* name) const
+    {
+        VLK_ASSERT(VLK_NULL != name);
+        for(u32 i=0; i<numProperties_; ++i){
+            if(0==strcmp(name, properties_[i].extensionName)){
+                return static_cast<s32>(i);
+            }
+        }
+        return -1;
+    }
+
+    //--------------------------------------------------------------
+    //---
     //--- PhysicalDevice
     //---
     //--------------------------------------------------------------
@@ -133,6 +226,9 @@ namespace vk
     class PhysicalDevice
     {
     public:
+        inline operator const VkPhysicalDevice() const;
+        inline operator VkPhysicalDevice();
+
         /**
         @brief
         */
@@ -181,8 +277,10 @@ namespace vk
         */
         inline VkResult enumerateDeviceExtensionProperties(const char* layerName, u32* propertyCount, VkExtensionProperties* properties);
 
-
-        VkResult createDevice(Device& device, const VkDeviceCreateInfo* createInfo, const VkAllocationCallbacks* allocator);
+        VkResult createDevice(
+            Device& device,
+            const VkDeviceCreateInfo* createInfo,
+            const VkAllocationCallbacks* allocator);
 
     private:
         friend class Instance;
@@ -190,52 +288,63 @@ namespace vk
         VkPhysicalDevice device_;
     };
 
+    inline PhysicalDevice::operator const VkPhysicalDevice() const
+    {
+        return device_;
+    }
+
+    inline PhysicalDevice::operator VkPhysicalDevice()
+    {
+        return device_;
+    }
+
     inline void PhysicalDevice::getPhysicalDeviceFeatures(VkPhysicalDeviceFeatures* features)
     {
-        vkGetPhysicalDeviceFeatures_(device_, features);
+        vkGetPhysicalDeviceFeatures(device_, features);
     }
 
     inline void PhysicalDevice::getPhysicalDeviceProperties(VkPhysicalDeviceProperties* properties)
     {
-        vkGetPhysicalDeviceProperties_(device_, properties);
+        vkGetPhysicalDeviceProperties(device_, properties);
     }
 
     inline void PhysicalDevice::getPhysicalDeviceFormatProperties(VkFormat format, VkFormatProperties* formatProperties)
     {
-        vkGetPhysicalDeviceFormatProperties_(device_, format, formatProperties);
+        vkGetPhysicalDeviceFormatProperties(device_, format, formatProperties);
     }
 
     inline VkResult PhysicalDevice::enumerateDeviceLayerProperties(u32* propertyCount, VkLayerProperties* properties)
     {
-        vkEnumerateDeviceLayerProperties_(device_, propertyCount, properties);
+        return vkEnumerateDeviceLayerProperties(device_, propertyCount, properties);
     }
 
     inline VkResult PhysicalDevice::getPhysicalDeviceImageFormatProperties(VkFormat format, VkImageType type, VkImageTiling tiling, VkImageUsageFlags usage, VkImageCreateFlags flags, VkImageFormatProperties* imageFormatProperties)
     {
-        return vkGetPhysicalDeviceImageFormatProperties_(device_, format, type, tiling, usage, flags, imageFormatProperties);
+        return vkGetPhysicalDeviceImageFormatProperties(device_, format, type, tiling, usage, flags, imageFormatProperties);
     }
 
     inline void PhysicalDevice::getPhysicalDeviceSparseImageFormatProperties(VkFormat format, VkImageType type, VkSampleCountFlagBits samples, VkImageUsageFlags usage, VkImageTiling tiling, u32* propertyCount, VkSparseImageFormatProperties* properties)
     {
-        vkGetPhysicalDeviceSparseImageFormatProperties_(device_, format, type, samples, usage, tiling, propertyCount, properties);
+        vkGetPhysicalDeviceSparseImageFormatProperties(device_, format, type, samples, usage, tiling, propertyCount, properties);
     }
 
     inline void PhysicalDevice::getPhysicalDeviceMemoryProperties(VkPhysicalDeviceMemoryProperties* memoryProperties)
     {
-        vkGetPhysicalDeviceMemoryProperties_(device_, memoryProperties);
+        vkGetPhysicalDeviceMemoryProperties(device_, memoryProperties);
     }
 
     inline void PhysicalDevice::getPhysicalDeviceQueueFamilyProperties(u32* queueFamilyPropertyCount, VkQueueFamilyProperties* queueFamilyProperties)
     {
-        vkGetPhysicalDeviceQueueFamilyProperties_(device_, queueFamilyPropertyCount, queueFamilyProperties);
+        vkGetPhysicalDeviceQueueFamilyProperties(device_, queueFamilyPropertyCount, queueFamilyProperties);
     }
 
     inline VkResult PhysicalDevice::enumerateDeviceExtensionProperties(const char* layerName, u32* propertyCount, VkExtensionProperties* properties)
     {
-        vkEnumerateDeviceExtensionProperties_(device_, layerName, propertyCount, properties);
+        vkEnumerateDeviceExtensionProperties(device_, layerName, propertyCount, properties);
     }
 
     //--------------------------------------------------------------
+
     //---
     //--- PhysicalDevices
     //---
@@ -249,7 +358,7 @@ namespace vk
 
         /**
         */
-        inline u32 getNumDevices() const;
+        inline u32 size() const;
 
         /**
         */
@@ -262,7 +371,7 @@ namespace vk
         PhysicalDevice devices_[MaxDevices];
     };
 
-    inline u32 PhysicalDevices::getNumDevices() const
+    inline u32 PhysicalDevices::size() const
     {
         return numDevices_;
     }
@@ -286,15 +395,49 @@ namespace vk
         ~Instance();
 
         inline bool valid() const;
-
-#define VLK_EXT_DECL_INSTANCE_MEMBER(name) name
-#define VLK_EXT_IMPL_INSTANCE_MEMBER(name) name ## _
-#define VLK_MEMBER_INSTANCE instance_
-#include "VkFunctions.inc"
+        inline operator const VkInstance() const;
+        inline operator VkInstance();
 
         void destroy();
 
         PhysicalDevices enumeratePhysicalDevices();
+        inline VkSurfaceKHR getPresentSurface();
+
+#ifdef VK_USE_PLATFORM_XLIB_KHR
+        typedef VkXlibSurfaceCreateInfoKHR SurfaceCreateInfo;
+#endif
+
+#ifdef VK_USE_PLATFORM_XCB_KHR
+        typedef VkXcbSurfaceCreateInfoKHR SurfaceCreateInfo;
+#endif
+
+#ifdef VK_USE_PLATFORM_WAYLAND_KHR
+        typedef VkWaylandSurfaceCreateInfoKHR SurfaceCreateInfo;
+#endif
+
+#ifdef VK_USE_PLATFORM_MIR_KHR
+        typedef VkMirSurfaceCreateInfoKHR SurfaceCreateInfo;
+#endif
+
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+        typedef VkAndroidSurfaceCreateInfoKHR SurfaceCreateInfo;
+#endif
+
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+        typedef VkWin32SurfaceCreateInfoKHR SurfaceCreateInfo;
+#endif
+
+        VkResult createPresentSurface(const SurfaceCreateInfo& createInfo);
+
+#define VLK_EXT_INSTANCE_MEMBER
+#define VLK_EXT_DECL_INSTANCE_MEMBER(name) name
+#define VLK_EXT_IMPL_INSTANCE_MEMBER(name) name ## _
+
+#define VLK_EXT_DECL_PHYSICALDEVICE_MEMBER(name) name
+#define VLK_EXT_IMPL_PHYSICALDEVICE_MEMBER(name) name ## _
+
+#define VLK_MEMBER_INSTANCE instance_
+#include "VkFunctions.inc"
 
         Instance& operator=(Instance&& rhs);
     private:
@@ -306,6 +449,7 @@ namespace vk
         VkResult initialize();
 
         VkInstance instance_;
+        VkSurfaceKHR presentSurface_;
         const VkAllocationCallbacks* allocator_;
 
 #define VLK_EXT_INSTANCE_FUNCTION(name) PFN_ ## name name ## _;
@@ -315,6 +459,21 @@ namespace vk
     inline bool Instance::valid() const
     {
         return VLK_NULL != instance_;
+    }
+
+    inline Instance::operator const VkInstance() const
+    {
+        return instance_;
+    }
+
+    inline Instance::operator VkInstance()
+    {
+        return instance_;
+    }
+
+    inline VkSurfaceKHR Instance::getPresentSurface()
+    {
+        return presentSurface_;
     }
 
     //--------------------------------------------------------------
@@ -327,24 +486,54 @@ namespace vk
     class Device
     {
     public:
+        static const u32 MaxQueues = 4;
+        static const u32 MaxSwapchainImages = 4;
+        static const u32 GraphicsQueue = 0;
+        static const u32 PresentQueue = 1;
+
         Device();
-        Device(Device&& rhs);
         ~Device();
 
+        void destroy();
+
         inline bool valid() const;
+        inline operator const VkDevice() const;
+        inline operator VkDevice();
+
+        VkResult createSwapchain(VkSwapchainCreateInfoKHR& createInfo);
+
+        /**
+        */
+        VkResult createCommandBuffers();
+
+        /**
+        */
+        VkResult clearCommandBuffers();
+
+        /**
+        */
+        VkResult recordCommandBuffers();
+
+        bool present();
+
+        /**
+        */
+        bool onWindowSizeChanged();
+
+        inline u32 getNumQueues() const;
+        inline VkQueue& getQueue(u32 index);
 
 #define VLK_EXT_DECL_DEVICE_MEMBER(name) name
 #define VLK_EXT_IMPL_DEVICE_MEMBER(name) name ## _
 #define VLK_MEMBER_DEVICE device_
 #include "VkFunctions.inc"
 
-        void destroy();
-
-        Device& operator=(Device&& rhs);
     private:
         friend class PhysicalDevice;
         Device(const Device&) = delete;
+        Device(Device&& rhs) = delete;
         Device& operator=(const Device&) = delete;
+        Device& operator=(Device&& rhs) = delete;
 
         VkResult initialize();
 
@@ -352,13 +541,45 @@ namespace vk
 #include "VkFunctions.inc"
 
         VkDevice device_;
-        u32 queueFamily_;
+        VkSwapchainCreateInfoKHR swapchainCreateInfo_;
+        VkSwapchainKHR swapchain_;
+        u32 numQueues_;
+        u32 queueFamilyIndices_[MaxQueues];
+        VkQueue queues_[MaxQueues];
+        VkSemaphore semaphoreImageAvailable_;
+        VkSemaphore semaphoreRenderingFinished_;
+        u32 swapchainImageCount_;
+        VkImage swapchainImages_[MaxSwapchainImages];
+        VkCommandBuffer presentQueueCommandBuffers_[MaxSwapchainImages];
+        VkCommandPool presentQueueCommandPool_;
+        VkClearColorValue clearColor_;
         const VkAllocationCallbacks* allocator_;
     };
 
     inline bool Device::valid() const
     {
         return VLK_NULL != device_;
+    }
+
+    inline Device::operator const VkDevice() const
+    {
+        return device_;
+    }
+
+    inline Device::operator VkDevice()
+    {
+        return device_;
+    }
+
+    inline u32 Device::getNumQueues() const
+    {
+        return numQueues_;
+    }
+
+    inline VkQueue& Device::getQueue(u32 index)
+    {
+        VLK_ASSERT(0<=index && index<numQueues_);
+        return queues_[index];
     }
 }
 #endif //INC_VK_H_
