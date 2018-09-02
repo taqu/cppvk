@@ -1,7 +1,7 @@
-#ifndef INC_VK_H_
-#define INC_VK_H_
+#ifndef INC_CPPVK_H_
+#define INC_CPPVK_H_
 /**
-@file vk.h
+@file cppvk.h
 @author t-sakai
 @date 2017/10/15 create
 */
@@ -11,65 +11,96 @@
 
 #ifdef __cplusplus
 #   if 201103L<=__cplusplus || 1900<=_MSC_VER
-#       define VLK_CPP11 1
+#       define CPPVK_CPP11 1
 #   endif
 #endif
 
 #ifdef __cplusplus
-#   ifdef VLK_CPP11
-#       define VLK_NULL nullptr
+#   ifdef CPPVK_CPP11
+#       define CPPVK_NULL nullptr
 #   else
-#       define VLK_NULL 0
+#       define CPPVK_NULL 0
 #   endif
 #else
-#   define VLK_NULL (void*)0
+#   define CPPVK_NULL (void*)0
 #endif
 
+#include <cstdint>
 
-#ifdef _WIN32
+#ifdef _MSC_VER
 
-#define VLK_DLHANDLE HMODULE
-#define VLK_DLOPEN(path) LoadLibrary((path))
-#define VLK_DLSYM(handle, name) GetProcAddress((handle), (name))
-#define VLK_DLCLOSE(handle) FreeLibrary((handle))
+#define CPPVK_DLHANDLE HMODULE
+#define CPPVK_DLOPEN(path) LoadLibrary((path))
+#define CPPVK_DLSYM(handle, name) GetProcAddress((handle), (name))
+#define CPPVK_DLCLOSE(handle) FreeLibrary((handle))
 
-#define VLK_VULKANLIB ("vulkan-1.dll")
+#define CPPVK_VULKANLIB ("vulkan-1.dll")
 
 #else
 
-#define VLK_DLHANDLE void*
-#define VLK_DLOPEN(path) dlopen((path), RTLD_NOW)
-#define VLK_DLSYM(handle, name) dlsym((handle), (name))
-#define VLK_DLCLOSE(handle) dlclose((handle))
+#define CPPVK_DLHANDLE void*
+#define CPPVK_DLOPEN(path) dlopen((path), RTLD_NOW)
+#define CPPVK_DLSYM(handle, name) dlsym((handle), (name))
+#define CPPVK_DLCLOSE(handle) dlclose((handle))
 
-#define VLK_VULKANLIB ("libvulkan.so.1")
+#define CPPVK_VULKANLIB ("libvulkan.so.1")
 
+#endif
+
+#ifdef CPPVK_USE_PLATFORM_XLIB_KHR
+#define VK_USE_PLATFORM_XLIB_KHR
+#endif
+
+#ifdef CPPVK_USE_PLATFORM_XCB_KHR
+#define VK_USE_PLATFORM_XCB_KHR
+#endif
+
+#ifdef CPPVK_USE_PLATFORM_WAYLAND_KHR
+#define VK_USE_PLATFORM_WAYLAND_KHR
+#endif
+
+#ifdef CPPVK_USE_PLATFORM_MIR_KHR
+#define VK_USE_PLATFORM_MIR_KHR
+#endif
+
+#ifdef CPPVK_USE_PLATFORM_ANDROID_KHR
+#define VK_USE_PLATFORM_ANDROID_KHR
+#endif
+
+#ifdef CPPVK_USE_PLATFORM_WIN32_KHR
+#define VK_USE_PLATFORM_WIN32_KHR
 #endif
 
 #define VK_NO_PROTOTYPES 1
 #include "vulkan.h"
 
-namespace vk
+#include "cppvk_config.h"
+
+namespace cppvk
 {
-#define VLK_REPORT_ERROR 1
-#define VLK_REPORT_WARNING 1
+#define CPPVK_REPORT_ERROR 1
+#define CPPVK_REPORT_WARNING 1
 
 #ifdef _DEBUG
-#define VLK_ASSERT(exp) assert(exp)
+#define CPPVK_ASSERT(exp) assert(exp)
 #else
-#define VLK_ASSERT(exp)
+#define CPPVK_ASSERT(exp)
 #endif
 
-#ifdef _MSC_VER
     typedef char Char;
-    typedef __int32 s32;
-    typedef unsigned __int32 u32;
-
-#else
-    typedef char Char;
+    typedef int8_t s8;
+    typedef int16_t s16;
     typedef int32_t s32;
+    typedef int64_t s64;
+
+    typedef uint8_t u8;
+    typedef uint16_t u16;
     typedef uint32_t u32;
-#endif
+    typedef uint64_t u64;
+
+    typedef float f32;
+    typedef double f64;
+
     template<class T>
     inline const T& maximum(const T& x0, const T& x1)
     {
@@ -82,20 +113,56 @@ namespace vk
         return (x0<x1)? x0 : x1;
     }
 
-    static const u32 MaxProperties = 32;
-
     //-------------------------------------------------------------------------------
-#define VLK_EXPORTED_FUNCTION(name) extern PFN_ ## name name;
-#define VLK_INSTANCE_FUNCTION(name) extern PFN_ ## name name;
-#define VLK_DEVICE_FUNCTION(name) extern PFN_ ## name name;
-#define VLK_PHYSICALDEVICE_FUNCTION(name) extern PFN_ ## name name;
-
-#define VLK_EXT_EXPORTED_FUNCTION(name) extern PFN_ ## name name;
+#define CPPVK_EXPORTED_FUNCTION(name) extern PFN_ ## name name;
 #include "VkFunctions.inc"
 
     //--------------------------------------------------------------
+    typedef bool (*PFN_checkExtensions)(const VkExtensionProperties& properties);
+    typedef bool (*PFN_checkQueueFamily)(const VkQueueFamilyProperties& properties);
+    typedef bool (*PFN_checkDeviceFeatures)(VkPhysicalDeviceFeatures& dst, const VkPhysicalDeviceFeatures& supported);
+
     class Instance;
     class Device;
+    class Swapchain;
+    class CommandPool;
+    class CommandBuffer;
+
+    //--------------------------------------------------------------
+    struct InstanceCreateInfo
+    {
+        //Application info
+        const Char* applicationName_;
+        u32 applicationVersion_;
+        const Char* engineName_;
+        u32 engineVersion_;
+        u32 apiVersion_;
+
+        //Instance info
+        VkInstanceCreateFlags createFlags_;
+        u32 enabledLayerCount_;
+        const Char* enabledLayerNames_[CPPVK_MAX_LAYERS];
+        u32 enabledExtensionCount_;
+        const Char* enabledExtensionNames_[CPPVK_MAX_INSTANCE_EXTENSION_PROPERTIES];
+    };
+
+    //--------------------------------------------------------------
+    struct DeviceCreateInfo
+    {
+        //Device queue info
+        VkDeviceQueueCreateFlags deviceQueueCreateFlags_;
+        u32 queueFamilyIndex_;
+        u32 queueCount_;
+        const f32* queuePriorities_;
+
+        //
+        VkDeviceCreateFlags deviceCreateFlags_;
+        u32 enabledLayerCount_;
+        const Char* enabledLayerNames_[CPPVK_MAX_LAYERS];
+        u32 enabledExtensionCount_;
+        const Char* enabledExtensionNames_[CPPVK_MAX_DEVICE_EXTENSION_PROPERTIES];
+        VkPhysicalDeviceFeatures* enabledFeatures_;
+    };
 
     //--------------------------------------------------------------
     //---
@@ -112,18 +179,16 @@ namespace vk
 
         VkResult initialize();
         void terminate();
-
-        VkResult createInstance(Instance& instance, const VkInstanceCreateInfo* createInfo, const VkAllocationCallbacks* allocator);
     private:
         Lib(const Lib&) = delete;
         Lib& operator=(const Lib&) = delete;
 
-        VLK_DLHANDLE handle_;
+        CPPVK_DLHANDLE handle_;
     };
 
     inline bool Lib::valid() const
     {
-        return VLK_NULL != handle_;
+        return CPPVK_NULL != handle_;
     }
 
     //--------------------------------------------------------------
@@ -131,89 +196,72 @@ namespace vk
     //--- ExtensionProperties
     //---
     //--------------------------------------------------------------
-    template<u32 MaxCount>
+    template<u32 N>
     class ExtensionProperties
     {
     public:
+        static const u32 MaxProperties = N;
+
         ExtensionProperties();
         ~ExtensionProperties();
 
-        VkResult enumerateInstanceExtensionProperties(const Char* layerName = VLK_NULL);
-        VkResult enumerateDeviceExtensionProperties(VkPhysicalDevice device, const Char* layerName = VLK_NULL);
-
-        inline u32 size() const;
-        inline const VkExtensionProperties& get(u32 index) const;
-
-        /**
-        @return get it index [0,size), otherwise -1
-        @param name ... no null, an extension name to find
-        */
-        s32 find(const Char* name) const;
+        u32 getExtensions(const Char** useExtensions, PFN_checkExtensions checkExtensions) const;
     private:
-        ExtensionProperties(const ExtensionProperties&) = delete;
-        ExtensionProperties& operator=(const ExtensionProperties&) = delete;
+        friend class PhysicalDevice;
+        friend class System;
 
-        u32 numProperties_;
-        VkExtensionProperties properties_[MaxCount];
+        u32 numExtensionProperties_;
+        VkExtensionProperties extensionProperties_[MaxProperties];
     };
 
-    template<u32 MaxCount>
-    ExtensionProperties<MaxCount>::ExtensionProperties()
-        :numProperties_(0)
+    template<u32 N>
+    ExtensionProperties<N>::ExtensionProperties()
+        :numExtensionProperties_(0)
     {
     }
 
-    template<u32 MaxCount>
-    ExtensionProperties<MaxCount>::~ExtensionProperties()
-    {
-    }
+    template<u32 N>
+    ExtensionProperties<N>::~ExtensionProperties()
+    {}
 
-    template<u32 MaxCount>
-    VkResult ExtensionProperties<MaxCount>::enumerateInstanceExtensionProperties(const Char* layerName)
+    template<u32 N>
+    u32 ExtensionProperties<N>::getExtensions(const Char** useExtensions, PFN_checkExtensions checkExtensions) const
     {
-        numProperties_ = MaxCount;
-        VkResult result = vkEnumerateInstanceExtensionProperties(layerName, &numProperties_, properties_);
-        if(VK_SUCCESS != result){
-            numProperties_ = 0;
-        }
-        return result;
-    }
-
-    template<u32 MaxCount>
-    VkResult ExtensionProperties<MaxCount>::enumerateDeviceExtensionProperties(VkPhysicalDevice device, const Char* layerName)
-    {
-        numProperties_ = MaxCount;
-        VkResult result = vkEnumerateDeviceExtensionProperties(device, layerName, &numProperties_, properties_);
-        if(VK_SUCCESS != result){
-            numProperties_ = 0;
-        }
-        return result;
-    }
-
-    template<u32 MaxCount>
-    inline u32 ExtensionProperties<MaxCount>::size() const
-    {
-        return numProperties_;
-    }
-
-    template<u32 MaxCount>
-    inline const VkExtensionProperties& ExtensionProperties<MaxCount>::get(u32 index) const
-    {
-        VLK_ASSERT(0<=index && index<numProperties_);
-        return properties_[index];
-    }
-
-    template<u32 MaxCount>
-    s32 ExtensionProperties<MaxCount>::find(const Char* name) const
-    {
-        VLK_ASSERT(VLK_NULL != name);
-        for(u32 i=0; i<numProperties_; ++i){
-            if(0==strcmp(name, properties_[i].extensionName)){
-                return static_cast<s32>(i);
+        CPPVK_ASSERT(CPPVK_NULL != useExtensions);
+        CPPVK_ASSERT(CPPVK_NULL != checkExtensions);
+        u32 count = 0;
+        for(u32 i=0; i<numExtensionProperties_; ++i){
+            if(!checkExtensions(extensionProperties_[i])){
+                continue;
             }
+            useExtensions[count++] = extensionProperties_[i].extensionName;
         }
-        return -1;
+        return count;
     }
+
+    typedef ExtensionProperties<CPPVK_MAX_INSTANCE_EXTENSION_PROPERTIES> InstanceExtensionProperties;
+    typedef ExtensionProperties<CPPVK_MAX_DEVICE_EXTENSION_PROPERTIES> DeviceExtensionProperties;
+
+    //--------------------------------------------------------------
+    //---
+    //--- QueueFamilyProperties
+    //---
+    //--------------------------------------------------------------
+    class QueueFamilyProperties
+    {
+    public:
+        static const u32 MaxProperties = CPPVK_MAX_QUEUE_FAMILY_PROPERTIES;
+
+        QueueFamilyProperties();
+        ~QueueFamilyProperties();
+
+        s32 selectQueueFamily(PFN_checkQueueFamily checkQueueFamily) const;
+    private:
+        friend class PhysicalDevice;
+
+        u32 numQueueFamilyProperties_;
+        VkQueueFamilyProperties queueFamilyProperties_[MaxProperties];
+    };
 
     //--------------------------------------------------------------
     //---
@@ -232,17 +280,17 @@ namespace vk
         /**
         @brief
         */
-        inline void getPhysicalDeviceFeatures(VkPhysicalDeviceFeatures* features);
+        inline void getPhysicalDeviceFeatures(VkPhysicalDeviceFeatures& features);
 
         /**
         @brief
         */
-        inline void getPhysicalDeviceProperties(VkPhysicalDeviceProperties* properties);
+        inline void getPhysicalDeviceProperties(VkPhysicalDeviceProperties& properties);
 
         /**
         @brief
         */
-        inline void getPhysicalDeviceFormatProperties(VkFormat format, VkFormatProperties* formatProperties);
+        inline void getPhysicalDeviceFormatProperties(VkFormat format, VkFormatProperties& formatProperties);
 
         /**
         @brief
@@ -254,7 +302,7 @@ namespace vk
         @brief
         @return
         */
-        inline VkResult getPhysicalDeviceImageFormatProperties(VkFormat format, VkImageType type, VkImageTiling tiling, VkImageUsageFlags usage, VkImageCreateFlags flags, VkImageFormatProperties* imageFormatProperties);
+        inline VkResult getPhysicalDeviceImageFormatProperties(VkFormat format, VkImageType type, VkImageTiling tiling, VkImageUsageFlags usage, VkImageCreateFlags flags, VkImageFormatProperties& imageFormatProperties);
 
         /**
         @brief
@@ -264,24 +312,18 @@ namespace vk
         /**
         @brief
         */
-        inline void getPhysicalDeviceMemoryProperties(VkPhysicalDeviceMemoryProperties* memoryProperties);
+        inline void getPhysicalDeviceMemoryProperties(VkPhysicalDeviceMemoryProperties& memoryProperties);
 
         /**
         @brief
         */
-        inline void getPhysicalDeviceQueueFamilyProperties(u32* queueFamilyPropertyCount, VkQueueFamilyProperties* queueFamilyProperties);
+        void getPhysicalDeviceQueueFamilyProperties(QueueFamilyProperties& queueFamilyProperties);
 
         /**
         @brief
         @return
         */
-        inline VkResult enumerateDeviceExtensionProperties(const char* layerName, u32* propertyCount, VkExtensionProperties* properties);
-
-        VkResult createDevice(
-            Device& device,
-            const VkDeviceCreateInfo* createInfo,
-            const VkAllocationCallbacks* allocator);
-
+        void enumerateDeviceExtensionProperties(DeviceExtensionProperties& properties, const Char* layerName);
     private:
         friend class Instance;
 
@@ -298,19 +340,19 @@ namespace vk
         return device_;
     }
 
-    inline void PhysicalDevice::getPhysicalDeviceFeatures(VkPhysicalDeviceFeatures* features)
+    inline void PhysicalDevice::getPhysicalDeviceFeatures(VkPhysicalDeviceFeatures& features)
     {
-        vkGetPhysicalDeviceFeatures(device_, features);
+        vkGetPhysicalDeviceFeatures(device_, &features);
     }
 
-    inline void PhysicalDevice::getPhysicalDeviceProperties(VkPhysicalDeviceProperties* properties)
+    inline void PhysicalDevice::getPhysicalDeviceProperties(VkPhysicalDeviceProperties& properties)
     {
-        vkGetPhysicalDeviceProperties(device_, properties);
+        vkGetPhysicalDeviceProperties(device_, &properties);
     }
 
-    inline void PhysicalDevice::getPhysicalDeviceFormatProperties(VkFormat format, VkFormatProperties* formatProperties)
+    inline void PhysicalDevice::getPhysicalDeviceFormatProperties(VkFormat format, VkFormatProperties& formatProperties)
     {
-        vkGetPhysicalDeviceFormatProperties(device_, format, formatProperties);
+        vkGetPhysicalDeviceFormatProperties(device_, format, &formatProperties);
     }
 
     inline VkResult PhysicalDevice::enumerateDeviceLayerProperties(u32* propertyCount, VkLayerProperties* properties)
@@ -318,9 +360,9 @@ namespace vk
         return vkEnumerateDeviceLayerProperties(device_, propertyCount, properties);
     }
 
-    inline VkResult PhysicalDevice::getPhysicalDeviceImageFormatProperties(VkFormat format, VkImageType type, VkImageTiling tiling, VkImageUsageFlags usage, VkImageCreateFlags flags, VkImageFormatProperties* imageFormatProperties)
+    inline VkResult PhysicalDevice::getPhysicalDeviceImageFormatProperties(VkFormat format, VkImageType type, VkImageTiling tiling, VkImageUsageFlags usage, VkImageCreateFlags flags, VkImageFormatProperties& imageFormatProperties)
     {
-        return vkGetPhysicalDeviceImageFormatProperties(device_, format, type, tiling, usage, flags, imageFormatProperties);
+        return vkGetPhysicalDeviceImageFormatProperties(device_, format, type, tiling, usage, flags, &imageFormatProperties);
     }
 
     inline void PhysicalDevice::getPhysicalDeviceSparseImageFormatProperties(VkFormat format, VkImageType type, VkSampleCountFlagBits samples, VkImageUsageFlags usage, VkImageTiling tiling, u32* propertyCount, VkSparseImageFormatProperties* properties)
@@ -328,19 +370,9 @@ namespace vk
         vkGetPhysicalDeviceSparseImageFormatProperties(device_, format, type, samples, usage, tiling, propertyCount, properties);
     }
 
-    inline void PhysicalDevice::getPhysicalDeviceMemoryProperties(VkPhysicalDeviceMemoryProperties* memoryProperties)
+    inline void PhysicalDevice::getPhysicalDeviceMemoryProperties(VkPhysicalDeviceMemoryProperties& memoryProperties)
     {
-        vkGetPhysicalDeviceMemoryProperties(device_, memoryProperties);
-    }
-
-    inline void PhysicalDevice::getPhysicalDeviceQueueFamilyProperties(u32* queueFamilyPropertyCount, VkQueueFamilyProperties* queueFamilyProperties)
-    {
-        vkGetPhysicalDeviceQueueFamilyProperties(device_, queueFamilyPropertyCount, queueFamilyProperties);
-    }
-
-    inline VkResult PhysicalDevice::enumerateDeviceExtensionProperties(const char* layerName, u32* propertyCount, VkExtensionProperties* properties)
-    {
-        vkEnumerateDeviceExtensionProperties(device_, layerName, propertyCount, properties);
+        vkGetPhysicalDeviceMemoryProperties(device_, &memoryProperties);
     }
 
     //--------------------------------------------------------------
@@ -354,21 +386,20 @@ namespace vk
     class PhysicalDevices
     {
     public:
-        static const u32 MaxDevices = 8;
-
+        static const s32 MaxPhysicalDevices = CPPVK_MAX_PHYSICAL_DEVICES;
         /**
         */
         inline u32 size() const;
 
         /**
         */
-        inline PhysicalDevice& getDevice(u32 index);
+        inline const PhysicalDevice& operator[](u32 index) const;
 
     private:
         friend class Instance;
 
         u32 numDevices_;
-        PhysicalDevice devices_[MaxDevices];
+        PhysicalDevice devices_[MaxPhysicalDevices];
     };
 
     inline u32 PhysicalDevices::size() const
@@ -376,9 +407,9 @@ namespace vk
         return numDevices_;
     }
 
-    inline PhysicalDevice& PhysicalDevices::getDevice(u32 index)
+    inline const PhysicalDevice& PhysicalDevices::operator[](u32 index) const
     {
-        VLK_ASSERT(index<numDevices_);
+        CPPVK_ASSERT(index<numDevices_);
         return devices_[index];
     }
 
@@ -390,75 +421,69 @@ namespace vk
     class Instance
     {
     public:
+        static VkResult create(Instance& instance, const VkInstanceCreateInfo& createInfo, const VkAllocationCallbacks* allocator);
+
         Instance();
-        Instance(Instance&& rhs);
         ~Instance();
 
         inline bool valid() const;
         inline operator const VkInstance() const;
         inline operator VkInstance();
-
         void destroy();
+
+        inline const VkAllocationCallbacks* getAllocator();
 
         PhysicalDevices enumeratePhysicalDevices();
         inline VkSurfaceKHR getPresentSurface();
 
-#ifdef VK_USE_PLATFORM_XLIB_KHR
+#ifdef CPPVK_USE_PLATFORM_XLIB_KHR
         typedef VkXlibSurfaceCreateInfoKHR SurfaceCreateInfo;
 #endif
 
-#ifdef VK_USE_PLATFORM_XCB_KHR
+#ifdef CPPVK_USE_PLATFORM_XCB_KHR
         typedef VkXcbSurfaceCreateInfoKHR SurfaceCreateInfo;
 #endif
 
-#ifdef VK_USE_PLATFORM_WAYLAND_KHR
+#ifdef CPPVK_USE_PLATFORM_WAYLAND_KHR
         typedef VkWaylandSurfaceCreateInfoKHR SurfaceCreateInfo;
 #endif
 
-#ifdef VK_USE_PLATFORM_MIR_KHR
+#ifdef CPPVK_USE_PLATFORM_MIR_KHR
         typedef VkMirSurfaceCreateInfoKHR SurfaceCreateInfo;
 #endif
 
-#ifdef VK_USE_PLATFORM_ANDROID_KHR
+#ifdef CPPVK_USE_PLATFORM_ANDROID_KHR
         typedef VkAndroidSurfaceCreateInfoKHR SurfaceCreateInfo;
 #endif
 
-#ifdef VK_USE_PLATFORM_WIN32_KHR
+#ifdef CPPVK_USE_PLATFORM_WIN32_KHR
         typedef VkWin32SurfaceCreateInfoKHR SurfaceCreateInfo;
 #endif
 
         VkResult createPresentSurface(const SurfaceCreateInfo& createInfo);
 
-#define VLK_EXT_INSTANCE_MEMBER
-#define VLK_EXT_DECL_INSTANCE_MEMBER(name) name
-#define VLK_EXT_IMPL_INSTANCE_MEMBER(name) name ## _
 
-#define VLK_EXT_DECL_PHYSICALDEVICE_MEMBER(name) name
-#define VLK_EXT_IMPL_PHYSICALDEVICE_MEMBER(name) name ## _
-
-#define VLK_MEMBER_INSTANCE instance_
+#define CPPVK_EXT_INSTANCE_FUNCTION(name) PFN_ ## name name;
 #include "VkFunctions.inc"
 
-        Instance& operator=(Instance&& rhs);
     private:
         friend class Lib;
 
         Instance(const Instance&) = delete;
+        Instance(Instance&& rhs) = delete;
         Instance& operator=(const Instance&) = delete;
+        Instance& operator=(Instance&& rhs) = delete;
 
         VkResult initialize();
 
         VkInstance instance_;
         VkSurfaceKHR presentSurface_;
         const VkAllocationCallbacks* allocator_;
-
-#define VLK_EXT_INSTANCE_FUNCTION(name) PFN_ ## name name ## _;
-#include "VkFunctions.inc"
     };
 
     inline bool Instance::valid() const
     {
-        return VLK_NULL != instance_;
+        return CPPVK_NULL != instance_;
     }
 
     inline Instance::operator const VkInstance() const
@@ -476,6 +501,11 @@ namespace vk
         return presentSurface_;
     }
 
+    inline const VkAllocationCallbacks* Instance::getAllocator()
+    {
+        return allocator_;
+    }
+
     //--------------------------------------------------------------
     //---
     //--- Device
@@ -486,10 +516,13 @@ namespace vk
     class Device
     {
     public:
-        static const u32 MaxQueues = 4;
-        static const u32 MaxSwapchainImages = 4;
-        static const u32 GraphicsQueue = 0;
-        static const u32 PresentQueue = 1;
+        static const s32 MaxQueues = 4;
+        static const s32 GraphicsQueue = 0;
+        static const s32 ComputeQueue = 1;
+        static const s32 PresentQueue = 2;
+        static const s32 MaxCommandBuffers = 8;
+
+        static VkResult create(Device& device, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo& createInfo, const VkAllocationCallbacks* allocator);
 
         Device();
         ~Device();
@@ -500,65 +533,61 @@ namespace vk
         inline operator const VkDevice() const;
         inline operator VkDevice();
 
-        VkResult createSwapchain(VkSwapchainCreateInfoKHR& createInfo);
+        VkResult waitIdle();
 
         /**
         */
-        VkResult createCommandBuffers();
+        VkResult createSwapchain(Swapchain& swapchain, VkSwapchainCreateInfoKHR& createInfo, const VkAllocationCallbacks* allocator);
+        /**
+        */
+        void destroySwapchain(Swapchain& swapchain, const VkAllocationCallbacks* allocator);
 
         /**
         */
-        VkResult clearCommandBuffers();
+        VkResult createCommandPool(CommandPool& commandPool, const VkCommandPoolCreateInfo& createInfo, const VkAllocationCallbacks* allocator);
+        /**
+        */
+        void destroyCommandPool(CommandPool& commandPool, const VkAllocationCallbacks* allocator);
+        /**
+        */
+        VkResult resetCommandPool(CommandPool& commandPool, VkCommandPoolResetFlags flags);
 
         /**
         */
-        VkResult recordCommandBuffers();
-
-        bool present();
-
+        VkResult allocateCommandBuffers(CommandBuffer* commandBuffers, const VkCommandBufferAllocateInfo& allocateInfo);
         /**
         */
-        bool onWindowSizeChanged();
+        void deallocateCommandBuffers(u32 numBuffers, CommandBuffer* commandBuffers, CommandPool& commandPool);
 
         inline u32 getNumQueues() const;
         inline VkQueue& getQueue(u32 index);
 
-#define VLK_EXT_DECL_DEVICE_MEMBER(name) name
-#define VLK_EXT_IMPL_DEVICE_MEMBER(name) name ## _
-#define VLK_MEMBER_DEVICE device_
+        inline VkResult submit(s32 queue, u32 numSubmits, const VkSubmitInfo* submits, VkFence fence);
+        inline VkResult queueWaitIdle(s32 queue);
+
+#define CPPVK_EXT_DEVICE_FUNCTION(name) PFN_ ## name name;
 #include "VkFunctions.inc"
 
     private:
-        friend class PhysicalDevice;
         Device(const Device&) = delete;
         Device(Device&& rhs) = delete;
         Device& operator=(const Device&) = delete;
         Device& operator=(Device&& rhs) = delete;
 
-        VkResult initialize();
-
-#define VLK_EXT_DEVICE_FUNCTION(name) PFN_ ## name name ## _;
-#include "VkFunctions.inc"
+        VkResult initialize(const VkAllocationCallbacks* allocator);
 
         VkDevice device_;
-        VkSwapchainCreateInfoKHR swapchainCreateInfo_;
-        VkSwapchainKHR swapchain_;
         u32 numQueues_;
         u32 queueFamilyIndices_[MaxQueues];
         VkQueue queues_[MaxQueues];
-        VkSemaphore semaphoreImageAvailable_;
-        VkSemaphore semaphoreRenderingFinished_;
-        u32 swapchainImageCount_;
-        VkImage swapchainImages_[MaxSwapchainImages];
-        VkCommandBuffer presentQueueCommandBuffers_[MaxSwapchainImages];
-        VkCommandPool presentQueueCommandPool_;
-        VkClearColorValue clearColor_;
+        //VkSemaphore semaphoreImageAvailable_;
+        //VkSemaphore semaphoreRenderingFinished_;
         const VkAllocationCallbacks* allocator_;
     };
 
     inline bool Device::valid() const
     {
-        return VLK_NULL != device_;
+        return CPPVK_NULL != device_;
     }
 
     inline Device::operator const VkDevice() const
@@ -578,8 +607,321 @@ namespace vk
 
     inline VkQueue& Device::getQueue(u32 index)
     {
-        VLK_ASSERT(0<=index && index<numQueues_);
+        CPPVK_ASSERT(0<=index && index<numQueues_);
         return queues_[index];
     }
+
+    inline VkResult Device::submit(s32 queue, u32 numSubmits, const VkSubmitInfo* submits, VkFence fence)
+    {
+        CPPVK_ASSERT(CPPVK_NULL != device_);
+        CPPVK_ASSERT(0<=queue && queue<MaxQueues);
+        CPPVK_ASSERT(CPPVK_NULL != submits);
+        return vkQueueSubmit(queues_[queue], numSubmits, submits, fence);
+    }
+
+    inline VkResult Device::queueWaitIdle(s32 queue)
+    {
+        return vkQueueWaitIdle(queues_[queue]);
+    }
+
+    //--------------------------------------------------------------
+    //---
+    //--- Swapchain
+    //---
+    //--------------------------------------------------------------
+    /**
+    */
+    class Swapchain
+    {
+    public:
+        static const s32 MaxSwapchainImages = 4;
+
+        Swapchain();
+        ~Swapchain();
+
+        inline bool valid() const;
+        inline operator const VkSwapchainKHR() const;
+        inline operator VkSwapchainKHR();
+
+        inline s32 getNumImages() const;
+        inline VkImage getImage(s32 index);
+    private:
+        friend class Device;
+
+        Swapchain(const Swapchain&) = delete;
+        Swapchain& operator=(const Swapchain&) = delete;
+
+        VkSwapchainKHR swapchain_;
+        s32 numImages_;
+        VkImage images_[MaxSwapchainImages];
+    };
+
+    inline bool Swapchain::valid() const
+    {
+        return CPPVK_NULL != swapchain_;
+    }
+
+    inline Swapchain::operator const VkSwapchainKHR() const
+    {
+        return swapchain_;
+    }
+
+    inline Swapchain::operator VkSwapchainKHR()
+    {
+        return swapchain_;
+    }
+
+    inline s32 Swapchain::getNumImages() const
+    {
+        return numImages_;
+    }
+
+    inline VkImage Swapchain::getImage(s32 index)
+    {
+        CPPVK_ASSERT(0<=numImages_ && numImages_<MaxSwapchainImages);
+        return images_[index];
+    }
+
+    //--------------------------------------------------------------
+    //---
+    //--- CommandPool
+    //---
+    //--------------------------------------------------------------
+    /**
+    */
+    class CommandPool
+    {
+    public:
+        CommandPool();
+        ~CommandPool();
+
+        inline bool valid() const;
+        inline operator const VkCommandPool() const;
+        inline operator VkCommandPool();
+    private:
+        friend class Device;
+
+        CommandPool(const CommandPool&) = delete;
+        CommandPool& operator=(const CommandPool&) = delete;
+
+        VkCommandPool commandPool_;
+    };
+
+    inline bool CommandPool::valid() const
+    {
+        return CPPVK_NULL != commandPool_;
+    }
+
+    inline CommandPool::operator const VkCommandPool() const
+    {
+        return commandPool_;
+    }
+
+    inline CommandPool::operator VkCommandPool()
+    {
+        return commandPool_;
+    }
+
+    //--------------------------------------------------------------
+    //---
+    //--- CommandBuffer
+    //---
+    //--------------------------------------------------------------
+    /**
+    */
+    class CommandBuffer
+    {
+    public:
+        CommandBuffer();
+        ~CommandBuffer();
+
+        inline bool valid() const;
+        inline operator const VkCommandBuffer() const;
+        inline operator VkCommandBuffer();
+
+        inline VkResult begin(const VkCommandBufferBeginInfo& beginInfo);
+        inline VkResult end();
+        inline VkResult reset(VkCommandBufferResetFlags flags);
+
+        /**
+        */
+        inline void pipelineBarrier(
+            VkPipelineStageFlags srcStageMask,
+            VkPipelineStageFlags dstStageMask,
+            VkDependencyFlags dependencyFlags,
+            u32 numMemoryBarriers, const VkMemoryBarrier* memoryBarriers,
+            u32 numBufferBarriers, const VkBufferMemoryBarrier* bufferBarriers,
+            u32 numImageBarriers, const VkImageMemoryBarrier* imageBarriers);
+
+        /**
+        */
+        inline void fillBuffer(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, u32 data);
+        /**
+        */
+        inline void updateBuffer(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, const u32* data);
+        /**
+        */
+        inline void clearColorImage(VkImage image, VkImageLayout layout, const VkClearColorValue* color, u32 numRanges, const VkImageSubresourceRange* ranges);
+        /**
+        */
+        inline void clearDepthStencilImage(VkImage image, VkImageLayout layout, const VkClearDepthStencilValue* depthStencil, u32 numRanges, const VkImageSubresourceRange* ranges);
+
+        /**
+        */
+        inline void copy(VkBuffer src, VkBuffer dst, u32 numRegions, const VkBufferCopy* regions);
+        /**
+        */
+        inline void copy(VkBuffer src, VkImage dst, VkImageLayout layout, u32 numRegions, const VkBufferImageCopy* regions);
+        /**
+        */
+        inline void copy(VkImage src, VkImageLayout layout, VkBuffer dst, u32 numRegions, const VkBufferImageCopy* regions);
+        /**
+        */
+        inline void copy(VkImage src, VkImageLayout srcLayout, VkImage dst, VkImageLayout dstLayout, u32 numRegions, const VkImageCopy* regions);
+
+        /**
+        */
+        inline void blit(VkImage src, VkImageLayout srcLayout, VkImage dst, VkImageLayout dstLayout, u32 numRegions, const VkImageBlit* regions, VkFilter filter);
+
+    private:
+        friend class Device;
+
+        CommandBuffer(const CommandBuffer&) = delete;
+        CommandBuffer& operator=(const CommandBuffer&) = delete;
+
+        VkCommandBuffer commandBuffer_;
+    };
+
+    inline bool CommandBuffer::valid() const
+    {
+        return CPPVK_NULL != commandBuffer_;
+    }
+
+    inline CommandBuffer::operator const VkCommandBuffer() const
+    {
+        return commandBuffer_;
+    }
+
+    inline CommandBuffer::operator VkCommandBuffer()
+    {
+        return commandBuffer_;
+    }
+
+    inline VkResult CommandBuffer::begin(const VkCommandBufferBeginInfo& beginInfo)
+    {
+        CPPVK_ASSERT(valid());
+        return vkBeginCommandBuffer(commandBuffer_, &beginInfo);
+    }
+
+    inline VkResult CommandBuffer::end()
+    {
+        CPPVK_ASSERT(valid());
+        return vkEndCommandBuffer(commandBuffer_);
+    }
+
+    inline VkResult CommandBuffer::reset(VkCommandBufferResetFlags flags)
+    {
+        CPPVK_ASSERT(valid());
+        return vkResetCommandBuffer(commandBuffer_, flags);
+    }
+
+    inline void CommandBuffer::pipelineBarrier(
+        VkPipelineStageFlags srcStageMask,
+        VkPipelineStageFlags dstStageMask,
+        VkDependencyFlags dependencyFlags,
+        u32 numMemoryBarriers, const VkMemoryBarrier* memoryBarriers,
+        u32 numBufferBarriers, const VkBufferMemoryBarrier* bufferBarriers,
+        u32 numImageBarriers, const VkImageMemoryBarrier* imageBarriers)
+    {
+        CPPVK_ASSERT(valid());
+        vkCmdPipelineBarrier(commandBuffer_, srcStageMask, dstStageMask, dependencyFlags, numMemoryBarriers, memoryBarriers, numBufferBarriers, bufferBarriers, numImageBarriers, imageBarriers);
+    }
+
+    inline void CommandBuffer::fillBuffer(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, u32 data)
+    {
+        CPPVK_ASSERT(valid());
+        vkCmdFillBuffer(commandBuffer_, buffer, offset , size, data);
+    }
+
+    inline void CommandBuffer::updateBuffer(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, const u32* data)
+    {
+        CPPVK_ASSERT(valid());
+        vkCmdUpdateBuffer(commandBuffer_, buffer, offset, size, data);
+    }
+
+    inline void CommandBuffer::clearColorImage(VkImage image, VkImageLayout layout, const VkClearColorValue* color, u32 numRanges, const VkImageSubresourceRange* ranges)
+    {
+        CPPVK_ASSERT(valid());
+        vkCmdClearColorImage(commandBuffer_, image, layout, color, numRanges, ranges);
+    }
+
+    inline void CommandBuffer::clearDepthStencilImage(VkImage image, VkImageLayout layout, const VkClearDepthStencilValue* depthStencil, u32 numRanges, const VkImageSubresourceRange* ranges)
+    {
+        CPPVK_ASSERT(valid());
+        vkCmdClearDepthStencilImage(commandBuffer_, image, layout, depthStencil, numRanges, ranges);
+    }
+
+    inline void CommandBuffer::copy(VkBuffer src, VkBuffer dst, u32 numRegions, const VkBufferCopy* regions)
+    {
+        CPPVK_ASSERT(valid());
+        vkCmdCopyBuffer(commandBuffer_, src, dst, numRegions, regions);
+    }
+
+    inline void CommandBuffer::copy(VkBuffer src, VkImage dst, VkImageLayout layout, u32 numRegions, const VkBufferImageCopy* regions)
+    {
+        CPPVK_ASSERT(valid());
+        vkCmdCopyBufferToImage(commandBuffer_, src, dst, layout, numRegions, regions);
+    }
+
+    inline void CommandBuffer::copy(VkImage src, VkImageLayout layout, VkBuffer dst, u32 numRegions, const VkBufferImageCopy* regions)
+    {
+        CPPVK_ASSERT(valid());
+        vkCmdCopyImageToBuffer(commandBuffer_, src, layout, dst, numRegions, regions);
+    }
+
+    inline void CommandBuffer::copy(VkImage src, VkImageLayout srcLayout, VkImage dst, VkImageLayout dstLayout, u32 numRegions, const VkImageCopy* regions)
+    {
+        CPPVK_ASSERT(valid());
+        vkCmdCopyImage(commandBuffer_, src, srcLayout, dst, dstLayout, numRegions, regions);
+    }
+
+    /**
+    */
+    inline void CommandBuffer::blit(VkImage src, VkImageLayout srcLayout, VkImage dst, VkImageLayout dstLayout, u32 numRegions, const VkImageBlit* regions, VkFilter filter)
+    {
+        CPPVK_ASSERT(valid());
+        vkCmdBlitImage(commandBuffer_, src, srcLayout, dst, dstLayout, numRegions, regions, filter);
+    }
+
+    //--------------------------------------------------------------
+    //---
+    //--- System
+    //---
+    //--------------------------------------------------------------
+    /**
+    */
+    class System
+    {
+    public:
+        System();
+        ~System();
+
+        bool initialize();
+        void terminate();
+
+        void getInstanceExtensionProperties(InstanceExtensionProperties& properties, const Char* layerName);
+        PhysicalDevices enumeratePhysicalDevices();
+
+        bool createInstance(InstanceCreateInfo& createInfo, const Char* layerName, PFN_checkExtensions checkExtensions, const VkAllocationCallbacks* allocator);
+        bool createDevice(s32 index, DeviceCreateInfo& createInfo, const Char* layerName, PFN_checkQueueFamily checkQueueFamily, PFN_checkExtensions checkExtensions, PFN_checkDeviceFeatures checkDeviceFeatures, const VkAllocationCallbacks* allocator);
+        bool createPresentSurface(const Instance::SurfaceCreateInfo& createInfo);
+    private:
+        System(const System&) = delete;
+        System& operator=(const System&) = delete;
+
+        Lib lib_;
+        Instance instance_;
+        Device devices_[CPPVK_MAX_PHYSICAL_DEVICES];
+    };
 }
-#endif //INC_VK_H_
+#endif //INC_CPPVK_H_

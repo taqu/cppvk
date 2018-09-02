@@ -43,12 +43,12 @@ int main(int /*argc*/, char** /*argv*/)
     lgfx::Window window;
     {
         lgfx::Window::InitParam param;
-        param.instance_ = VLK_NULL;
+        param.instance_ = CPPVK_NULL;
         param.width_ = Width;
         param.height_ = Height;
         param.style_ = 0;
         param.exStyle_ = 0;
-        param.wndProc_ = VLK_NULL;
+        param.wndProc_ = CPPVK_NULL;
         param.title_ = "Vulkan Sample";
         param.windowed_ = true;
         if(!window.create(param)){
@@ -81,7 +81,7 @@ int main(int /*argc*/, char** /*argv*/)
         //---------------------------------------------------------------------
         VkApplicationInfo applicationInfo = {
             VK_STRUCTURE_TYPE_APPLICATION_INFO, //structure type
-            VLK_NULL,
+            CPPVK_NULL,
             "Tutorial Vulkan", //application name
             VK_MAKE_VERSION(1,0,0), //application version
             "Tutorial Engine", //engine name
@@ -90,15 +90,15 @@ int main(int /*argc*/, char** /*argv*/)
         };
         VkInstanceCreateInfo instanceCreateInfo = {
             VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, //structure type
-            VLK_NULL,
+            CPPVK_NULL,
             0, //instance creation flags
             &applicationInfo, //application info
             0, //enabled layer count
-            VLK_NULL, //enabled layer names
+            CPPVK_NULL, //enabled layer names
             sizeof(instanceExtensions)/sizeof(instanceExtensions[0]), //enabled extension count
             instanceExtensions, //enabled extension names
         };
-        if(VK_SUCCESS != lib.createInstance(instance, &instanceCreateInfo, VLK_NULL)){
+        if(VK_SUCCESS != lib.createInstance(instance, &instanceCreateInfo, CPPVK_NULL)){
             fprintf(stderr, "Fail to create an instance\n");
             return 0;
         }
@@ -109,7 +109,7 @@ int main(int /*argc*/, char** /*argv*/)
         vk::Instance::SurfaceCreateInfo surfaceCreateInfo =
         {
             VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR, //structure type
-            VLK_NULL,
+            CPPVK_NULL,
             0, //flags
             window.getInstance(),
             window.getHandle(),
@@ -134,28 +134,29 @@ int main(int /*argc*/, char** /*argv*/)
 
         // Create a logical device
         //---------------------------------------------------------------------
-        vk::u32 numQueues = 1;
-        if(graphicsQueueFamily != presentQueueFamily){
-            ++numQueues;
+        vk::u32 numQueueFamilies = 1;
+        vk::u32 numGraphicsQueues = 1;
+        if(graphicsQueueFamily == presentQueueFamily){
+            ++numGraphicsQueues;
         }
 
-        VkDeviceQueueCreateInfo queueCreateInfo[vk::MaxProperties];
+        VkDeviceQueueCreateInfo queueCreateInfo[vk::MaxQueues];
         const float queuePriorities[] = {0.0f, 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f};
         queueCreateInfo[0] = {
             VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, //structure type
-            VLK_NULL,
+            CPPVK_NULL,
             0, //device queue creation flags
             graphicsQueueFamily, //selected queue family's index
-            numQueues, //queue count
+            numGraphicsQueues, //queue count
             queuePriorities, //queue priorities
         };
         if(graphicsQueueFamily != presentQueueFamily){
             queueCreateInfo[1] = {
                 VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, //structure type
-                VLK_NULL,
+                CPPVK_NULL,
                 0, //device queue creation flags
                 presentQueueFamily, //selected queue family's index
-                numQueues, //queue count
+                1, //queue count
                 queuePriorities, //queue priorities
             };
         }
@@ -163,18 +164,18 @@ int main(int /*argc*/, char** /*argv*/)
 
         VkDeviceCreateInfo deviceCreateInfo = {
             VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, //structure type
-            VLK_NULL,
+            CPPVK_NULL,
             0, //device creation flags
-            numQueues, //queue create info count,
+            numQueueFamilies, //queue create info count,
             queueCreateInfo, //queue create info
             0, //enabled layer count
-            VLK_NULL, //enabled layer names
+            CPPVK_NULL, //enabled layer names
             sizeof(deviceExtensions)/sizeof(deviceExtensions[0]), //enabled extension count
             deviceExtensions, //enabled extension names
-            VLK_NULL, //enabled physical device features
+            CPPVK_NULL, //enabled physical device features
         };
 
-        if(VK_SUCCESS != physicalDevice.createDevice(device, &deviceCreateInfo, VLK_NULL)){
+        if(VK_SUCCESS != physicalDevice.createDevice(device, &deviceCreateInfo, CPPVK_NULL)){
             fprintf(stderr, "Fail to create device\n");
             return 0;
         }
@@ -206,7 +207,7 @@ int main(int /*argc*/, char** /*argv*/)
         VkSwapchainCreateInfoKHR swapchainCreateInfo =
         {
             VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-            VLK_NULL, //structure type
+            CPPVK_NULL, //structure type
             0, //swapchain create flags
             instance.getPresentSurface(), //surface
             numSwapchainSurfaces, //num of surfaces
@@ -222,7 +223,7 @@ int main(int /*argc*/, char** /*argv*/)
             VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
             presentMode,
             VK_TRUE,
-            VLK_NULL,
+            CPPVK_NULL,
         };
         if(VK_SUCCESS != device.createSwapchain(swapchainCreateInfo)){
             fprintf(stderr, "Fail to create swapchain\n");
@@ -251,7 +252,7 @@ bool selectQueueFamily(vk::PhysicalDevice& physicalDevice, vk::u32& selectedGrap
 
     // Get queue family properties
     vk::u32 countProperties = 0;
-    physicalDevice.getPhysicalDeviceQueueFamilyProperties(&countProperties, VLK_NULL);
+    physicalDevice.getPhysicalDeviceQueueFamilyProperties(&countProperties, CPPVK_NULL);
     countProperties = vk::minimum(countProperties, vk::MaxProperties);
     physicalDevice.getPhysicalDeviceQueueFamilyProperties(&countProperties, queueProperties);
 
@@ -370,7 +371,7 @@ bool selectPresentMode(
     }
 
     selectedFormat.format = VK_FORMAT_UNDEFINED;
-    instance.vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &numSurfaceFormats, VLK_NULL);
+    instance.vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &numSurfaceFormats, CPPVK_NULL);
     numSurfaceFormats = vk::minimum(numSurfaceFormats, MaxSurfaceFormats);
     instance.vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &numSurfaceFormats, surfaceFormats);
     for(vk::u32 i=0; i<numSurfaceFormats; ++i){
@@ -384,7 +385,7 @@ bool selectPresentMode(
     }
 
     selectedMode = VK_PRESENT_MODE_MAX_ENUM_KHR;
-    instance.vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &numPresentModes, VLK_NULL);
+    instance.vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &numPresentModes, CPPVK_NULL);
     numPresentModes = vk::minimum(numPresentModes, MaxPresentModes);
     instance.vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &numPresentModes, presentModes);
     for(vk::u32 i=0; i<numPresentModes; ++i){
@@ -402,7 +403,7 @@ bool selectPresentMode(
 bool checkInstanceExtensions(vk::s32 numExtensions, const vk::Char** extensions)
 {
     ExtensionProperties properties;
-    if(VK_SUCCESS != properties.enumerateInstanceExtensionProperties(VLK_NULL)){
+    if(VK_SUCCESS != properties.enumerateInstanceExtensionProperties(CPPVK_NULL)){
         fprintf(stderr, "Fail to enumerate instance extensions\n");
         return false;
     }
@@ -419,7 +420,7 @@ bool checkInstanceExtensions(vk::s32 numExtensions, const vk::Char** extensions)
 bool checkDeviceExtensions(vk::PhysicalDevice& physicalDevice, vk::s32 numExtensions, const vk::Char** extensions)
 {
     ExtensionProperties properties;
-    if(VK_SUCCESS != properties.enumerateDeviceExtensionProperties(physicalDevice, VLK_NULL)){
+    if(VK_SUCCESS != properties.enumerateDeviceExtensionProperties(physicalDevice, CPPVK_NULL)){
         fprintf(stderr, "Fail to enumerate device extensions\n");
         return false;
     }
@@ -435,7 +436,7 @@ bool checkDeviceExtensions(vk::PhysicalDevice& physicalDevice, vk::s32 numExtens
 void printInstanceExtensions()
 {
     ExtensionProperties properties;
-    if(VK_SUCCESS != properties.enumerateInstanceExtensionProperties(VLK_NULL)){
+    if(VK_SUCCESS != properties.enumerateInstanceExtensionProperties(CPPVK_NULL)){
         fprintf(stderr, "Fail to enumerate instance extensions\n");
         return;
     }
@@ -447,7 +448,7 @@ void printInstanceExtensions()
 void printDeviceExtentions(vk::PhysicalDevice& physicalDevice)
 {
     ExtensionProperties properties;
-    if(VK_SUCCESS != properties.enumerateDeviceExtensionProperties(physicalDevice, VLK_NULL)){
+    if(VK_SUCCESS != properties.enumerateDeviceExtensionProperties(physicalDevice, CPPVK_NULL)){
         fprintf(stderr, "Fail to enumerate physical device extensions\n");
         return;
     }
