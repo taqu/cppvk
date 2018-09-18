@@ -7,7 +7,7 @@ project(${ProjectName})
 
 include_directories(AFTER ${CMAKE_CURRENT_SOURCE_DIR})
 
-set(HEADERS "../vk_platform.h;../vulkan.h;../cppvk.h;../Window.h")
+set(HEADERS "../vk_platform.h;../vulkan.h;../cppvk_config.h;../cppvk.h;../Window.h")
 set(SOURCES "../cppvk.cpp;../Window.cpp;sample01.cpp;")
 
 source_group("include" FILES ${HEADERS})

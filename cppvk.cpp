@@ -39,6 +39,12 @@ namespace cppvk
 
     //--------------------------------------------------------------
     //---
+    //--- Builder
+    //---
+    //--------------------------------------------------------------
+
+    //--------------------------------------------------------------
+    //---
     //--- Lib
     //---
     //--------------------------------------------------------------
@@ -94,44 +100,9 @@ namespace cppvk
 
     //--------------------------------------------------------------
     //---
-    //--- QueueFamilyProperties
-    //---
-    //--------------------------------------------------------------
-    QueueFamilyProperties::QueueFamilyProperties()
-        :numQueueFamilyProperties_(0)
-    {
-    }
-
-    QueueFamilyProperties::~QueueFamilyProperties()
-    {}
-
-    s32 QueueFamilyProperties::selectQueueFamily(PFN_checkQueueFamily checkQueueFamily) const
-    {
-        CPPVK_ASSERT(CPPVK_NULL != checkQueueFamily);
-        for(u32 i=0; i<numQueueFamilyProperties_; ++i){
-            if(checkQueueFamily(queueFamilyProperties_[i])){
-                return static_cast<s32>(i);
-            }
-        }
-        return -1;
-    }
-
-    //--------------------------------------------------------------
-    //---
     //--- PhysicalDevice
     //---
     //--------------------------------------------------------------
-    void PhysicalDevice::getPhysicalDeviceQueueFamilyProperties(QueueFamilyProperties& queueFamilyProperties)
-    {
-        queueFamilyProperties.numQueueFamilyProperties_ = QueueFamilyProperties::MaxProperties;
-        vkGetPhysicalDeviceQueueFamilyProperties(device_, &queueFamilyProperties.numQueueFamilyProperties_, queueFamilyProperties.queueFamilyProperties_);
-    }
-
-    void PhysicalDevice::enumerateDeviceExtensionProperties(DeviceExtensionProperties& properties, const Char* layerName)
-    {
-        properties.numExtensionProperties_ = DeviceExtensionProperties::MaxProperties;
-        vkEnumerateDeviceExtensionProperties(device_, layerName, &properties.numExtensionProperties_, properties.extensionProperties_);
-    }
 
     //--------------------------------------------------------------
     //---
@@ -140,8 +111,8 @@ namespace cppvk
     //--------------------------------------------------------------
     Instance::Instance()
         :instance_(CPPVK_NULL)
-        ,presentSurface_(CPPVK_NULL)
         ,allocator_(CPPVK_NULL)
+        ,presentationSurface_(CPPVK_NULL)
 #define CPPVK_EXT_INSTANCE_FUNCTION(name) ,name(CPPVK_NULL)
 #include "VkFunctions.inc"
     {
@@ -152,14 +123,18 @@ namespace cppvk
         destroy();
     }
 
-    VkResult Instance::create(Instance& instance, const VkInstanceCreateInfo& createInfo, const VkAllocationCallbacks* allocator)
+    VkResult Instance::create(
+        Instance& instance,
+        const VkInstanceCreateInfo& instanceCreateInfo,
+        const SurfaceCreateInfo& surfaceCreateInfo,
+        const VkAllocationCallbacks* allocator)
     {
         if(instance.valid()){
             return VK_ERROR_INITIALIZATION_FAILED;
         }
 
         VkResult result;
-        result = vkCreateInstance(&createInfo, allocator, &instance.instance_);
+        result = vkCreateInstance(&instanceCreateInfo, allocator, &instance.instance_);
         if(VK_SUCCESS != result){
             return result;
         }
@@ -170,72 +145,126 @@ namespace cppvk
             instance.instance_ = CPPVK_NULL;
             return result;
         }
-
         instance.allocator_ = allocator;
+
+        result = instance.createPresentationSurface(surfaceCreateInfo);
+        if(VK_SUCCESS != result){
+            vkDestroyInstance(instance.instance_, allocator);
+            instance.instance_ = CPPVK_NULL;
+            instance.allocator_ = CPPVK_NULL;
+            return result;
+        }
         return VK_SUCCESS;
     }
 
     void Instance::destroy()
     {
-        if(CPPVK_NULL != presentSurface_){
-            vkDestroySurfaceKHR(instance_, presentSurface_, allocator_);
-            presentSurface_ = CPPVK_NULL;
-        }
-
         if(CPPVK_NULL == instance_){
             return;
         }
 
-#define CPPVK_EXT_INSTANCE_FUNCTION(name) name = CPPVK_NULL;
-#include "VkFunctions.inc"
+        if(CPPVK_NULL != presentationSurface_){
+            vkDestroySurfaceKHR(instance_, presentationSurface_, allocator_);
+            presentationSurface_ = CPPVK_NULL;
+        }
 
         vkDestroyInstance(instance_, allocator_);
-        instance_ = CPPVK_NULL;
         allocator_ = CPPVK_NULL;
+        instance_ = CPPVK_NULL;
+
+#define CPPVK_EXT_INSTANCE_FUNCTION(name) name = CPPVK_NULL;
+#include "VkFunctions.inc"
     }
 
-    PhysicalDevices Instance::enumeratePhysicalDevices()
+    u32 Instance::enumeratePhysicalDevices(u32 maxPhysicalDevices, PhysicalDevice* devices) const
     {
-        u32 deviceCount = PhysicalDevices::MaxPhysicalDevices;
-        VkPhysicalDevice devices[PhysicalDevices::MaxPhysicalDevices];
-        VkResult result = vkEnumeratePhysicalDevices(instance_, &deviceCount, devices);
-        if(VK_SUCCESS != result){
-            deviceCount = 0;
-        }
+        CPPVK_ASSERT(maxPhysicalDevices<=CPPVK_MAX_PHYSICAL_DEVICES);
+        CPPVK_ASSERT(CPPVK_NULL != devices);
 
-        PhysicalDevices ret;
-        ret.numDevices_ = deviceCount;
+        u32 deviceCount = maxPhysicalDevices;
+        VkPhysicalDevice tmp[CPPVK_MAX_PHYSICAL_DEVICES];
+        if(VK_SUCCESS != vkEnumeratePhysicalDevices(instance_, &deviceCount, tmp)){
+            return 0;
+        }
         for(u32 i=0; i<deviceCount; ++i){
-            ret.devices_[i].device_ = devices[i];
+            devices[i].device_ = tmp[i];
         }
-        return ret;
+        return deviceCount;
     }
 
-    VkResult Instance::createPresentSurface(const SurfaceCreateInfo& createInfo)
+    VkResult Instance::createPresentationSurface(const SurfaceCreateInfo& createInfo)
     {
-        if(CPPVK_NULL != presentSurface_){
+        if(CPPVK_NULL != presentationSurface_){
             return VK_ERROR_INITIALIZATION_FAILED;
         }
 #ifdef CPPVK_USE_PLATFORM_XLIB_KHR
-        VkResult result = vkCreateXlibSurfaceKHR(instance_, &createInfo, allocator, &surface.surface_);
+        VkXlibSurfaceCreateInfoKHR implCreateInto =
+        {
+            VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+            CPPVK_NULL,
+            createInfo.flags_,
+            createInfo.display_,
+            createInfo.window_,
+        };
+        VkResult result = vkCreateXlibSurfaceKHR(instance_, &implCreateInto, allocator, &presentationSurface_);
 #endif
 #ifdef CPPVK_USE_PLATFORM_XCB_KHR
-        VkResult result = vkCreateXcbSurfaceKHR(instance_, &createInfo, allocator, &surface.surface_);
+        VkXcbSurfaceCreateInfoKHR implCreateInto =
+        {
+            VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
+            CPPVK_NULL,
+            createInfo.flags_,
+            createInfo.connection_,
+            createInfo.window_,
+        };
+        VkResult result = vkCreateXcbSurfaceKHR(instance_, &implCreateInto, allocator, &presentationSurface_);
 #endif
 #ifdef CPPVK_USE_PLATFORM_WAYLAND_KHR
-        VkResult result = vkCreateWaylandSurfaceKHR(instance_, &createInfo, allocator, &surface.surface_);
+        VkWaylandSurfaceCreateInfoKHR implCreateInto =
+        {
+            VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
+            CPPVK_NULL,
+            createInfo.flags_,
+            createInfo.display_,
+            createInfo.surface_,
+        };
+        VkResult result = vkCreateWaylandSurfaceKHR(instance_, &implCreateInto, allocator, &presentationSurface_);
 #endif
 #ifdef CPPVK_USE_PLATFORM_MIR_KHR
-        VkResult result = vkCreateMirSurfaceKHR(instance_, &createInfo, allocator, &surface.surface_);
+        VkMirSurfaceCreateInfoKHR implCreateInto =
+        {
+            VK_STRUCTURE_TYPE_MIR_SURFACE_CREATE_INFO_KHR,
+            CPPVK_NULL,
+            createInfo.flags_,
+            createInfo.connection_,
+            createInfo.surface_,
+        };
+        VkResult result = vkCreateMirSurfaceKHR(instance_, &implCreateInto, allocator, &presentationSurface_);
 #endif
+
 #ifdef CPPVK_USE_PLATFORM_ANDROID_KHR
-        VkResult result = vkCreateAndroidSurfaceKHR(instance_, &createInfo, allocator, &surface.surface_);
+        VkAndroidSurfaceCreateInfoKHR implCreateInto =
+        {
+            VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR,
+            CPPVK_NULL,
+            createInfo.flags_,
+            createInfo.window_,
+        };
+        VkResult result = vkCreateAndroidSurfaceKHR(instance_, &implCreateInto, allocator, &presentationSurface_);
 #endif
+
 #ifdef CPPVK_USE_PLATFORM_WIN32_KHR
-        VkResult result = vkCreateWin32SurfaceKHR(instance_, &createInfo, allocator_, &presentSurface_);
+        VkWin32SurfaceCreateInfoKHR implCreateInto =
+        {
+            VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
+            CPPVK_NULL,
+            createInfo.flags_,
+            createInfo.hInstance_,
+            createInfo.hWnd_,
+        };
+        VkResult result = vkCreateWin32SurfaceKHR(instance_, &implCreateInto, allocator_, &presentationSurface_);
 #endif
         return result;
-
     }
 
     VkResult Instance::initialize()
@@ -251,6 +280,70 @@ namespace cppvk
         return VK_SUCCESS;
     }
 
+    bool Instance::getPhysicalDevicePresentationSurfaceSupport(PhysicalDevice physicalDevice, u32 queueFamilyIndex)
+    {
+        VkBool32 support = VK_FALSE;
+        if(VK_SUCCESS != vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, queueFamilyIndex, presentationSurface_, &support)){
+            support = VK_FALSE;
+        }
+        return (VK_TRUE == support);
+    }
+
+    //--------------------------------------------------------------
+    //---
+    //--- Swapchain
+    //---
+    //--------------------------------------------------------------
+    VkResult Swapchain::create(Swapchain& swapchain, Device& device, VkSwapchainCreateInfoKHR& createInfo, const VkAllocationCallbacks* allocator)
+    {
+        CPPVK_ASSERT(CPPVK_NULL != device);
+
+        if(CPPVK_NULL != swapchain.swapchain_){
+            createInfo.oldSwapchain = swapchain.swapchain_;
+        }
+
+        VkSwapchainKHR vkSwapchain = CPPVK_NULL;
+        VkResult result;
+        if(VK_SUCCESS != (result = device.vkCreateSwapchainKHR(device, &createInfo, allocator, &vkSwapchain))){
+            createInfo.oldSwapchain = CPPVK_NULL;
+            return result;
+        }
+
+        swapchain.destroy(device);
+        swapchain.swapchain_ = vkSwapchain;
+
+        swapchain.numImages_ = MaxSwapchainImages;
+        if(VK_SUCCESS != (result = device.vkGetSwapchainImagesKHR(device, swapchain.swapchain_, &swapchain.numImages_, swapchain.images_))){
+            swapchain.destroy(device);
+            return result;
+        }
+        CPPVK_ASSERT(0<swapchain.numImages_);
+        return VK_SUCCESS;
+    }
+
+    Swapchain::Swapchain()
+        :swapchain_(CPPVK_NULL)
+        ,allocator_(CPPVK_NULL)
+        ,numImages_(0)
+    {
+    }
+
+    Swapchain::~Swapchain()
+    {
+    }
+
+    void Swapchain::destroy(Device& device)
+    {
+        if(CPPVK_NULL == swapchain_){
+            return;
+        }
+        device.vkDestroySwapchainKHR(device, swapchain_, allocator_);
+
+        numImages_ = 0;
+        allocator_ = CPPVK_NULL;
+        swapchain_ = CPPVK_NULL;
+    }
+
     //--------------------------------------------------------------
     //---
     //--- Device
@@ -258,14 +351,12 @@ namespace cppvk
     //--------------------------------------------------------------
     Device::Device()
         :device_(CPPVK_NULL)
-        ,numQueues_(0)
         ,allocator_(CPPVK_NULL)
 #define CPPVK_EXT_DEVICE_FUNCTION(name) ,name(CPPVK_NULL)
 #include "VkFunctions.inc"
     {
         //clearColor_ = {0x00U, 0x00U, 0x00U, 0xFFU};
-        for(u32 i=0; i<MaxQueues; ++i){
-            queueFamilyIndices_[i] = 0;
+        for(u32 i=0; i<QueueType_Max; ++i){
             queues_[i] = CPPVK_NULL;
         }
     }
@@ -274,99 +365,66 @@ namespace cppvk
     {
     }
 
-    VkResult Device::create(Device& device, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo& createInfo, const VkAllocationCallbacks* allocator)
+    VkResult Device::create(
+        Device& device,
+        VkPhysicalDevice physicalDevice,
+        const VkDeviceCreateInfo& deviceCreateInfo,
+        const u32 queueFamilityIndices[QueueType_Max],
+        VkSwapchainCreateInfoKHR& swapchainCreateInfo,
+        const VkAllocationCallbacks* allocator)
     {
         CPPVK_ASSERT(CPPVK_NULL != physicalDevice);
-        CPPVK_ASSERT(0<createInfo.queueCreateInfoCount);
+        CPPVK_ASSERT(0<deviceCreateInfo.queueCreateInfoCount);
 
         if(device.valid()){
             return VK_ERROR_INITIALIZATION_FAILED;
         }
-
-        VkResult result = vkCreateDevice(physicalDevice, &createInfo, allocator, &device.device_);
+        VkResult result;
+        result = vkCreateDevice(physicalDevice, &deviceCreateInfo, allocator, &device.device_);
         if(VK_SUCCESS != result){
             return result;
         }
-
-        // get queues
-        switch(createInfo.queueCreateInfoCount)
-        {
-        case 1:
-            vkGetDeviceQueue(device, createInfo.pQueueCreateInfos[0].queueFamilyIndex, 0, &device.queues_[Device::GraphicsQueue]);
-            vkGetDeviceQueue(device, createInfo.pQueueCreateInfos[0].queueFamilyIndex, 0, &device.queues_[Device::ComputeQueue]);
-            vkGetDeviceQueue(device, createInfo.pQueueCreateInfos[0].queueFamilyIndex, 0, &device.queues_[Device::PresentQueue]);
-            device.queueFamilyIndices_[Device::GraphicsQueue] = createInfo.pQueueCreateInfos[0].queueFamilyIndex;
-            device.queueFamilyIndices_[Device::ComputeQueue] = createInfo.pQueueCreateInfos[0].queueFamilyIndex;
-            device.queueFamilyIndices_[Device::PresentQueue] = createInfo.pQueueCreateInfos[0].queueFamilyIndex;
-            break;
-        case 2:
-            vkGetDeviceQueue(device, createInfo.pQueueCreateInfos[0].queueFamilyIndex, 0, &device.queues_[Device::GraphicsQueue]);
-            vkGetDeviceQueue(device, createInfo.pQueueCreateInfos[0].queueFamilyIndex, 0, &device.queues_[Device::ComputeQueue]);
-            vkGetDeviceQueue(device, createInfo.pQueueCreateInfos[1].queueFamilyIndex, 0, &device.queues_[Device::PresentQueue]);
-            device.queueFamilyIndices_[Device::GraphicsQueue] = createInfo.pQueueCreateInfos[0].queueFamilyIndex;
-            device.queueFamilyIndices_[Device::ComputeQueue] = createInfo.pQueueCreateInfos[0].queueFamilyIndex;
-            device.queueFamilyIndices_[Device::PresentQueue] = createInfo.pQueueCreateInfos[1].queueFamilyIndex;
-            break;
-        case 3:
-            vkGetDeviceQueue(device, createInfo.pQueueCreateInfos[0].queueFamilyIndex, 0, &device.queues_[Device::GraphicsQueue]);
-            vkGetDeviceQueue(device, createInfo.pQueueCreateInfos[1].queueFamilyIndex, 0, &device.queues_[Device::ComputeQueue]);
-            vkGetDeviceQueue(device, createInfo.pQueueCreateInfos[2].queueFamilyIndex, 0, &device.queues_[Device::PresentQueue]);
-            device.queueFamilyIndices_[Device::GraphicsQueue] = createInfo.pQueueCreateInfos[0].queueFamilyIndex;
-            device.queueFamilyIndices_[Device::ComputeQueue] = createInfo.pQueueCreateInfos[1].queueFamilyIndex;
-            device.queueFamilyIndices_[Device::PresentQueue] = createInfo.pQueueCreateInfos[2].queueFamilyIndex;
-            break;
-        default:
-            vkDestroyDevice(device.device_, allocator);
-            device.device_ = CPPVK_NULL;
-            return VK_ERROR_INITIALIZATION_FAILED;
+        result = device.initialize();
+        if(VK_SUCCESS != result){
+            return result;
         }
+        device.allocator_ = allocator;
 
-        device.numQueues_ = createInfo.queueCreateInfoCount;
-
-        result = device.initialize(allocator);
+        result = Swapchain::create(device.swapchain_, device, swapchainCreateInfo, allocator);
         if(VK_SUCCESS != result){
             vkDestroyDevice(device.device_, allocator);
             device.device_ = CPPVK_NULL;
-            device.numQueues_ = 0;
+            device.allocator_ = CPPVK_NULL;
             return result;
         }
 
-        for(u32 i=0; i<device.numQueues_; ++i){
-            vkGetDeviceQueue(device, createInfo.pQueueCreateInfos[i].queueFamilyIndex, 0, &device.queues_[i]);
+        //Get queues
+        //----------------------------------
+        u32 queueIndices[QueueType_Max];
+        memset(queueIndices, 0, sizeof(u32)*QueueType_Max);
+
+        for(u32 i=0; i<QueueType_Max; ++i){
+            u32 queueFamilyIndex = queueFamilityIndices[i];
+            if(QueueType_Invalid == queueFamilyIndex){
+                continue;
+            }
+            vkGetDeviceQueue(device, queueFamilyIndex, queueIndices[queueFamilyIndex], &device.queues_[i]);
+            ++queueIndices[queueFamilyIndex];
+        }
+
+
+        result = device.createSemaphores();
+        if(VK_SUCCESS != result){
+            device.swapchain_.destroy(device);
+            vkDestroyDevice(device.device_, allocator);
+            device.device_ = CPPVK_NULL;
+            device.allocator_ = CPPVK_NULL;
+            for(u32 i=0; i<QueueType_Max; ++i){
+                device.queues_[i] = CPPVK_NULL;
+            }
+            return result;
         }
         return result;
-    }
-
-    VkResult Device::initialize(const VkAllocationCallbacks* allocator)
-    {
-        CPPVK_ASSERT(CPPVK_NULL != device_);
-        allocator_ = allocator;
-
-        VkResult result;
-        // create semaphores
-        VkSemaphoreCreateInfo semaphoreCreateInfo =
-        {
-            VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, //structure type
-            CPPVK_NULL,
-            0,//flags
-        };
-
-        //if(VK_SUCCESS != (result = vkCreateSemaphore(device_, &semaphoreCreateInfo, allocator, &semaphoreImageAvailable_))){
-        //    return result;
-        //}
-        //if(VK_SUCCESS != (result = vkCreateSemaphore(device_, &semaphoreCreateInfo, allocator, &semaphoreRenderingFinished_))){
-        //    vkDestroySemaphore(device_, semaphoreImageAvailable_, allocator_);
-        //    semaphoreImageAvailable_ = CPPVK_NULL;
-        //    return result;
-        //}
-
-#define CPPVK_EXT_DEVICE_FUNCTION(name) if(CPPVK_NULL == name) name = (PFN_ ## name)vkGetDeviceProcAddr(device_, #name);\
-    if(CPPVK_NULL == name){\
-        PRINT1_WARN("Warning: cannot get device function %s via vkGetDeviceProcAddr\n", #name);\
-    }
-#include "VkFunctions.inc"
-
-        return VK_SUCCESS;
     }
 
     void Device::destroy()
@@ -376,74 +434,33 @@ namespace cppvk
         }
         waitIdle();
 
-        //vkDestroySemaphore(device_, semaphoreRenderingFinished_, allocator_);
-        //semaphoreRenderingFinished_ = CPPVK_NULL;
-        //vkDestroySemaphore(device_, semaphoreImageAvailable_, allocator_);
-        //semaphoreImageAvailable_ = CPPVK_NULL;
+        if(CPPVK_NULL != semaphoreRenderingFinished_){
+            vkDestroySemaphore(device_, semaphoreRenderingFinished_, allocator_);
+            semaphoreRenderingFinished_ = CPPVK_NULL;
+        }
+        if(CPPVK_NULL != semaphoreImageAvailable_){
+            vkDestroySemaphore(device_, semaphoreImageAvailable_, allocator_);
+            semaphoreImageAvailable_ = CPPVK_NULL;
+        }
 
-#define VLK_EXT_DEVICE_FUNCTION(name) name ## _ = CPPVK_NULL;
-#include "VkFunctions.inc"
-
+        swapchain_.destroy(*this);
         vkDestroyDevice(device_, allocator_);
 
-        for(u32 i=0; i<numQueues_; ++i){
-            queueFamilyIndices_[i] = 0;
+        for(u32 i=0; i<QueueType_Max; ++i){
             queues_[i] = CPPVK_NULL;
         }
 
+        allocator_ = CPPVK_NULL;
         device_ = CPPVK_NULL;
-        numQueues_ = 0;
+
+#define VLK_EXT_DEVICE_FUNCTION(name) name ## _ = CPPVK_NULL;
+#include "VkFunctions.inc"
     }
 
     VkResult Device::waitIdle()
     {
         CPPVK_ASSERT(CPPVK_NULL != device_);
         return vkDeviceWaitIdle(device_);
-    }
-
-    VkResult Device::createSwapchain(Swapchain& swapchain, VkSwapchainCreateInfoKHR& createInfo, const VkAllocationCallbacks* allocator)
-    {
-        CPPVK_ASSERT(CPPVK_NULL != device_);
-
-        if(CPPVK_NULL != swapchain.swapchain_){
-            createInfo.oldSwapchain = swapchain.swapchain_;
-            swapchain.swapchain_ = CPPVK_NULL;
-        }
-
-        VkResult result;
-        if(VK_SUCCESS != (result = vkCreateSwapchainKHR(device_, &createInfo, allocator, &swapchain.swapchain_))){
-            swapchain.swapchain_ = createInfo.oldSwapchain;
-            createInfo.oldSwapchain = CPPVK_NULL;
-            return result;
-        }
-
-        if(CPPVK_NULL != createInfo.oldSwapchain){
-            vkDestroySwapchainKHR(device_, createInfo.oldSwapchain, allocator);
-            createInfo.oldSwapchain = CPPVK_NULL;
-        }
-
-        u32 numImages = swapchain.numImages_ = 0;
-        if(VK_SUCCESS != (result = vkGetSwapchainImagesKHR(device_, swapchain.swapchain_, &numImages, CPPVK_NULL)) || numImages<=0){
-            return result;
-        }
-
-        numImages = minimum(numImages, static_cast<u32>(Swapchain::MaxSwapchainImages));
-        if(VK_SUCCESS != (result = vkGetSwapchainImagesKHR(device_, swapchain.swapchain_, &numImages, swapchain.images_))){
-            return result;
-        }
-        swapchain.numImages_ = static_cast<s32>(numImages);
-        return VK_SUCCESS;
-    }
-
-    void Device::destroySwapchain(Swapchain& swapchain, const VkAllocationCallbacks* allocator)
-    {
-        CPPVK_ASSERT(CPPVK_NULL != device_);
-
-        if(swapchain.valid()){
-            vkDestroySwapchainKHR(device_, swapchain.swapchain_, allocator);
-            swapchain.swapchain_ = CPPVK_NULL;
-            swapchain.numImages_ = 0;
-        }
     }
 
     VkResult Device::createCommandPool(CommandPool& commandPool, const VkCommandPoolCreateInfo& createInfo, const VkAllocationCallbacks* allocator)
@@ -733,19 +750,42 @@ namespace cppvk
     }
 #endif
 
-    //--------------------------------------------------------------
-    //---
-    //--- Swapchain
-    //---
-    //--------------------------------------------------------------
-    Swapchain::Swapchain()
-        :swapchain_(CPPVK_NULL)
-        ,numImages_(0)
+    VkResult Device::initialize()
     {
+        CPPVK_ASSERT(CPPVK_NULL != device_);
+
+#define CPPVK_EXT_DEVICE_FUNCTION(name) if(CPPVK_NULL == name) name = (PFN_ ## name)vkGetDeviceProcAddr(device_, #name);\
+    if(CPPVK_NULL == name){\
+        PRINT1_WARN("Warning: cannot get device function %s via vkGetDeviceProcAddr\n", #name);\
+    }
+#include "VkFunctions.inc"
+
+        return VK_SUCCESS;
     }
 
-    Swapchain::~Swapchain()
+    VkResult Device::createSemaphores()
     {
+        CPPVK_ASSERT(CPPVK_NULL != device_);
+
+        VkResult result;
+        // create semaphores
+        VkSemaphoreCreateInfo semaphoreCreateInfo =
+        {
+            VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, //structure type
+            CPPVK_NULL,
+            0,//flags
+        };
+
+        if(VK_SUCCESS != (result = vkCreateSemaphore(device_, &semaphoreCreateInfo, allocator_, &semaphoreImageAvailable_))){
+            return result;
+        }
+        if(VK_SUCCESS != (result = vkCreateSemaphore(device_, &semaphoreCreateInfo, allocator_, &semaphoreRenderingFinished_))){
+            vkDestroySemaphore(device_, semaphoreImageAvailable_, allocator_);
+            semaphoreImageAvailable_ = CPPVK_NULL;
+            return result;
+        }
+
+        return VK_SUCCESS;
     }
 
     //--------------------------------------------------------------
@@ -781,6 +821,61 @@ namespace cppvk
     //--- System
     //---
     //--------------------------------------------------------------
+    namespace
+    {
+        template<class T>
+        void init(u32 size, T* array, T value)
+        {
+            for(u32 i=0; i<size; ++i){
+                array[i] = value;
+            }
+        }
+
+        bool acceptQueueFamily(u32& queueFamilyIndex, u32 index, VkQueueFamilyProperties& properties, VkQueueFlagBits queueFlag)
+        {
+            if(QueueType_Invalid != queueFamilyIndex){
+                return true;
+            }
+            if((0<properties.queueCount)
+                && (properties.queueFlags & queueFlag)){
+                --properties.queueCount;
+                queueFamilyIndex = index;
+                return true;
+            }
+            return false;
+        }
+
+        u32 createQueueCreateInfo(VkDeviceQueueCreateInfo* createInfo, u32 queueFamilyIndices[QueueType_Max], f32 queuePriorities[QueueType_Max][QueueType_Max])
+        {
+            u32 queueCount[QueueType_Max];
+            memset(queueCount, 0, sizeof(u32)*QueueType_Max);
+
+            for(u32 i=0; i<QueueType_Max; ++i){
+                if(QueueType_Invalid == queueFamilyIndices[i]){
+                    continue;
+                }
+                ++queueCount[queueFamilyIndices[i]];
+            }
+            u32 count = 0;
+            for(u32 i=0; i<QueueType_Max; ++i){
+                if(queueCount[i]<=0){
+                    continue;
+                }
+                createInfo[count].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO; //structure type
+                createInfo[count].pNext = CPPVK_NULL; //next. must be null
+                createInfo[count].flags = 0; //device queue creation flags. must set to 0
+                createInfo[count].queueFamilyIndex = i;
+                createInfo[count].queueCount = queueCount[i];
+                createInfo[count].pQueuePriorities = queuePriorities[i];
+                for(u32 j=0; j<queueCount[i]; ++j){
+                    queuePriorities[count][j] = j*0.1f;
+                }
+                ++count;
+            }
+            return count;
+        }
+    }
+
     System::System()
     {
     }
@@ -810,111 +905,399 @@ namespace cppvk
         vkEnumerateInstanceExtensionProperties(layerName, &properties.numExtensionProperties_, properties.extensionProperties_);
     }
 
-    bool System::createInstance(InstanceCreateInfo& createInfo, const Char* layerName, PFN_checkExtensions checkExtensions, const VkAllocationCallbacks* allocator)
+    bool System::createInstance(const InstanceCreateInfo& instanceCreateInfo, const SurfaceCreateInfo& surfaceCreateInfo, const Char* layerName, const VkAllocationCallbacks* allocator)
     {
-        if(CPPVK_NULL != checkExtensions){
+        u32 enabledExtensionCount = 0;
+        const Char* enabledExtensionNames[CPPVK_MAX_INSTANCE_EXTENSION_PROPERTIES];
+
+        if(CPPVK_NULL != instanceCreateInfo.checkExtensions_){
             InstanceExtensionProperties extensionProperties;
             getInstanceExtensionProperties(extensionProperties, layerName);
-            createInfo.enabledExtensionCount_ = extensionProperties.getExtensions(createInfo.enabledExtensionNames_, checkExtensions);
+            enabledExtensionCount = extensionProperties.getExtensions(enabledExtensionNames, instanceCreateInfo.checkExtensions_);
         }
 
-        VkApplicationInfo applicationInfo = {
+        VkApplicationInfo vkApplicationInfo = {
             VK_STRUCTURE_TYPE_APPLICATION_INFO, //structure type
-            CPPVK_NULL,
-            createInfo.applicationName_, //application name
-            createInfo.applicationVersion_, //application version
-            createInfo.engineName_, //engine name
-            createInfo.engineVersion_, //engine version
-            createInfo.apiVersion_, //api version
+            CPPVK_NULL, //must be null
+            instanceCreateInfo.applicationName_, //application name
+            instanceCreateInfo.applicationVersion_, //application version
+            instanceCreateInfo.engineName_, //engine name
+            instanceCreateInfo.engineVersion_, //engine version
+            instanceCreateInfo.apiVersion_, //api version
         };
 
-        VkInstanceCreateInfo instanceCreateInfo = {
+        VkInstanceCreateInfo vkInstanceCreateInfo = {
             VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, //structure type
-            CPPVK_NULL,
-            createInfo.createFlags_, //instance creation flags
-            &applicationInfo, //application info
-            createInfo.enabledLayerCount_, //enabled layer count
-            createInfo.enabledLayerNames_, //enabled layer names
-            createInfo.enabledExtensionCount_, //enabled extension count
-            createInfo.enabledExtensionNames_, //enabled extension names
+            CPPVK_NULL, //must be null
+            0, //instance creation flags. must set to 0
+            &vkApplicationInfo, //application info
+            instanceCreateInfo.enabledLayerCount_, //enabled layer count
+            instanceCreateInfo.enabledLayerNames_, //enabled layer names
+            enabledExtensionCount, //enabled extension count
+            enabledExtensionNames, //enabled extension names
         };
-        if(VK_SUCCESS == Instance::create(instance_, instanceCreateInfo, allocator)){
+        if(VK_SUCCESS != Instance::create(instance_, vkInstanceCreateInfo, surfaceCreateInfo, allocator)){
+            return false;
+        }
+        return true;
+    }
+
+    bool System::createDevice(
+        s32 index,
+        const DeviceCreateInfo& deviceCreateInfo,
+        const SwapchainCreateInfo& swapchainCreateInfo,
+        const Char* layerName,
+        const VkAllocationCallbacks* allocator)
+    {
+        //Queue families
+        PFN_checkQueueFamilies checkQueueFamilies = (CPPVK_NULL != deviceCreateInfo.checkQueueFamilies_)? deviceCreateInfo.checkQueueFamilies_ : defaultCheckQueueFamilies;
+        u32 numQueueFamilyProperties;
+        VkQueueFamilyProperties queueFamilyProperties[CPPVK_MAX_QUEUE_FAMILY_PROPERTIES];
+        bool queueFamilyPresentationSupports[CPPVK_MAX_QUEUE_FAMILY_PROPERTIES];
+
+        //Extensions
+        DeviceExtensionProperties deviceExtensionProperties;
+        u32 enabledExtensionCount;
+        const Char* enabledExtensionNames[CPPVK_MAX_DEVICE_EXTENSION_PROPERTIES];
+
+        //Physical device features
+        VkPhysicalDeviceFeatures features;
+        VkPhysicalDeviceFeatures* enabledFeatures = CPPVK_NULL;
+
+        //Surface capabilities
+        VkSurfaceCapabilitiesKHR surfaceCapabilities;
+        u32 swapChainCount;
+        VkExtent2D surfaceExtent;
+        VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        VkSurfaceTransformFlagBitsKHR imagePreTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+        VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        VkPresentModeKHR presentMode;
+        VkSurfaceFormatKHR surfaceFormat;
+
+        PhysicalDevice physicalDevices[CPPVK_MAX_PHYSICAL_DEVICES];
+        u32 numPhysicalDevices = instance_.enumeratePhysicalDevices(CPPVK_MAX_PHYSICAL_DEVICES, physicalDevices);
+
+        u32 countDevice = 0;
+        for(; countDevice<numPhysicalDevices; ++countDevice){
+            PhysicalDevice physicalDevice = physicalDevices[countDevice];
+
+            //--- Device
+            //----------------------------------------------------------
+            //Select queues for graphics and presentation
+            //Get queue properties
+            u32 queueFamilyIndices[QueueType_Max];
+            init(QueueType_Max, queueFamilyIndices, static_cast<u32>(QueueType_Invalid));
+
+            numQueueFamilyProperties = CPPVK_MAX_QUEUE_FAMILY_PROPERTIES;
+            vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &numQueueFamilyProperties, queueFamilyProperties);
+
+            for(u32 j=0; j<numQueueFamilyProperties; ++j){
+                queueFamilyPresentationSupports[j] = instance_.getPhysicalDevicePresentationSurfaceSupport(physicalDevice, j);
+            }
+            checkQueueFamilies(queueFamilyIndices, numQueueFamilyProperties, queueFamilyProperties, queueFamilyPresentationSupports, deviceCreateInfo.requestQueueTypes_);
+
+            if(QueueType_Invalid == queueFamilyIndices[QueueType_Present] || QueueType_Invalid == queueFamilyIndices[QueueType_Graphics]){
+                continue;
+            }
+
+            //Check device extensions
+            if(CPPVK_NULL != deviceCreateInfo.checkExtensions_){
+                physicalDevice.enumerateDeviceExtensionProperties(deviceExtensionProperties, layerName);
+                enabledExtensionCount = deviceExtensionProperties.getExtensions(enabledExtensionNames, deviceCreateInfo.checkExtensions_);
+            }
+
+            //Check device features
+            if(CPPVK_NULL != deviceCreateInfo.checkDeviceFeatures_){
+                VkPhysicalDeviceFeatures supported;
+                physicalDevice.getPhysicalDeviceFeatures(supported);
+                memset(&features, 0, sizeof(VkPhysicalDeviceFeatures));
+                if(!deviceCreateInfo.checkDeviceFeatures_(features, supported)){
+                    continue;
+                }
+                enabledFeatures = &features;
+            }
+
+            VkDeviceQueueCreateInfo queueCreateInfo[QueueType_Max];
+            f32 queuePriorities[QueueType_Max][QueueType_Max];
+            u32 numQueueCreateInfo = createQueueCreateInfo(queueCreateInfo, queueFamilyIndices, queuePriorities);
+
+            //--- Swapchain
+            //-------------------------------------------------------------
+            //Check surface capabilities
+            {
+                if(VK_SUCCESS != instance_.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, instance_.getPresentationSurface(), &surfaceCapabilities)){
+                    continue;
+                }
+
+                //Check swap chain image count
+                swapChainCount = clamp(swapchainCreateInfo.swapchainCount_, surfaceCapabilities.minImageCount, surfaceCapabilities.maxImageCount);
+
+                //Check image extent
+                if(-1 != surfaceCapabilities.currentExtent.width){
+                    surfaceExtent = surfaceCapabilities.currentExtent;
+                } else{
+                    surfaceExtent.width = clamp(swapchainCreateInfo.surfaceExtent_.width, surfaceCapabilities.minImageExtent.width, surfaceCapabilities.maxImageExtent.width);
+                    surfaceExtent.height = clamp(swapchainCreateInfo.surfaceExtent_.height, surfaceCapabilities.minImageExtent.height, surfaceCapabilities.maxImageExtent.height);
+                }
+
+                //Check usage flags
+                if(VK_IMAGE_USAGE_TRANSFER_DST_BIT != (surfaceCapabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT)){
+                    continue;
+                }
+                imageUsageFlags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+                imagePreTransform = surfaceCapabilities.currentTransform;
+                if(CPPVK_NULL != swapchainCreateInfo.checkSurfaceCapabilities_){
+                    if(!swapchainCreateInfo.checkSurfaceCapabilities_(imageUsageFlags, imagePreTransform, compositeAlpha, surfaceCapabilities)){
+                        continue;
+                    }
+                }
+            }
+
+            //Check present modes
+            {
+                VkPresentModeKHR presentModes[CPPVK_MAX_PRESENTMODES];
+                u32 countPresentModes = CPPVK_MAX_PRESENTMODES;
+                if(VK_SUCCESS != instance_.vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, instance_.getPresentationSurface(), &countPresentModes, presentModes)
+                    || countPresentModes<=0){
+                    continue;
+                }
+                presentMode = getPresentMode(countPresentModes, presentModes, swapchainCreateInfo.presentMode_);
+            }
+
+            //Check surface formats
+            {
+                VkSurfaceFormatKHR surfaceFormats[CPPVK_MAX_SURFACEFORMATS];
+                u32 countSurfaceFormats = CPPVK_MAX_SURFACEFORMATS;
+                if(VK_SUCCESS != instance_.vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, instance_.getPresentationSurface(), &countSurfaceFormats, surfaceFormats)
+                    || countSurfaceFormats<=0){
+                    continue;
+                }
+                if(CPPVK_NULL != swapchainCreateInfo.checkSurfaceFormats_){
+                    if(!swapchainCreateInfo.checkSurfaceFormats_(surfaceFormat, countSurfaceFormats, surfaceFormats)){
+                        continue;
+                    }
+                } else if(swapchainCreateInfo.supportHDR_){
+                    if(!defaultCheckSurfaceFormatHDR(surfaceFormat, countSurfaceFormats, surfaceFormats)){
+                        continue;
+                    }
+                } else{
+                    if(!defaultCheckSurfaceFormatSDR(surfaceFormat, countSurfaceFormats, surfaceFormats)){
+                        continue;
+                    }
+                }
+            }
+
+            VkDeviceCreateInfo vkDeviceCreateInfo = {
+                VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, //structure type
+                CPPVK_NULL,
+                0, //device create flags, must set to 0
+                numQueueCreateInfo, //queue create info count,
+                queueCreateInfo, //queue create info
+                deviceCreateInfo.enabledLayerCount_, //enabled layer count
+                deviceCreateInfo.enabledLayerNames_, //enabled layer names
+                enabledExtensionCount, //enabled extension count
+                enabledExtensionNames, //enabled extension names
+                enabledFeatures, //enabled physical device features
+            };
+
+            VkSwapchainCreateInfoKHR vkSwapchainCreateInfo = {
+                VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, //structure type
+                CPPVK_NULL, //must be null
+                0, //swapchain create flags, must set to 0
+                instance_.getPresentationSurface(),
+                swapChainCount, //swapchain image count
+                surfaceFormat.format,
+                surfaceFormat.colorSpace,
+                surfaceExtent,
+                1, //the number of views in a multiview or stereo surface
+                imageUsageFlags,
+                VK_SHARING_MODE_EXCLUSIVE, //sharing mode
+                0, //the number of queue family indices when imageSharingMode equals VK_SHARING_MODE_CONCURRENT
+                CPPVK_NULL, //an arrays of queue family indices when imageSharingMode equals VK_SHARING_MODE_CONCURRENT
+                imagePreTransform,
+                compositeAlpha,
+                presentMode,
+                VK_TRUE,
+                CPPVK_NULL,
+            };
+
+            if(VK_SUCCESS == Device::create(devices_[index], physicalDevice, vkDeviceCreateInfo, queueFamilyIndices, vkSwapchainCreateInfo, allocator)){
+                break;
+            }
+        }//for(; countDevice<physicalDevices.size();
+
+        return countDevice<numPhysicalDevices;
+    }
+
+    void System::defaultCheckQueueFamilies(
+        u32 queueFamilyIndices[QueueType_Max],
+        u32 numQueueFamilies,
+        VkQueueFamilyProperties* queueFamilyProperties,
+        const bool* queueFamilyPresentationSupports,
+        const bool* requests)
+    {
+        for(u32 i=0; i<numQueueFamilies; ++i){
+            if(QueueType_Invalid == queueFamilyIndices[QueueType_Present]
+                && 0<queueFamilyProperties[i].queueCount
+                && queueFamilyPresentationSupports[i]){
+                --queueFamilyProperties[i].queueCount;
+                queueFamilyIndices[QueueType_Present] = i;
+            }
+
+            acceptQueueFamily(queueFamilyIndices[QueueType_Graphics], i, queueFamilyProperties[i], VK_QUEUE_GRAPHICS_BIT);
+
+            if(requests[QueueType_Compute]){
+                acceptQueueFamily(queueFamilyIndices[QueueType_Compute], i, queueFamilyProperties[i], VK_QUEUE_COMPUTE_BIT);
+            }
+            if(requests[QueueType_Transfer]){
+                acceptQueueFamily(queueFamilyIndices[QueueType_Transfer], i, queueFamilyProperties[i], VK_QUEUE_TRANSFER_BIT);
+            }
+            if(requests[QueueType_SparceBinding]){
+                acceptQueueFamily(queueFamilyIndices[QueueType_SparceBinding], i, queueFamilyProperties[i], VK_QUEUE_SPARSE_BINDING_BIT);
+            }
+        }
+    }
+
+    bool System::defaultSupportedColorSpaceSDR(VkColorSpaceKHR colorSpace)
+    {
+        switch(colorSpace){
+        case VK_COLOR_SPACE_SRGB_NONLINEAR_KHR:
+        case VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT:
+        case VK_COLOR_SPACE_DCI_P3_NONLINEAR_EXT:
+        case VK_COLOR_SPACE_BT709_NONLINEAR_EXT:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    bool System::defaultSupportedColorSpaceHDR(VkColorSpaceKHR colorSpace)
+    {
+        switch(colorSpace){
+        case VK_COLOR_SPACE_BT2020_LINEAR_EXT:
+        case VK_COLOR_SPACE_HDR10_ST2084_EXT:
+        case VK_COLOR_SPACE_HDR10_HLG_EXT:
+        case VK_COLOR_SPACE_ADOBERGB_LINEAR_EXT:
+            return true;
+        default:
+            return false;
+        }
+    }
+    
+    bool System::defaultCheckSurfaceFormatSDR(VkSurfaceFormatKHR& dst, u32 size, const VkSurfaceFormatKHR* formats)
+    {
+        VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_MAX_ENUM_KHR;
+        for(u32 i=0; i<size; ++i){
+            if(defaultSupportedColorSpaceSDR(formats[i].colorSpace)){
+                colorSpace = formats[i].colorSpace;
+                break;
+            }
+        }
+        if(VK_COLOR_SPACE_MAX_ENUM_KHR == colorSpace){
+            return false;
+        }
+
+        VkFormat format = VK_FORMAT_UNDEFINED;
+        for(u32 i=0; i<size; ++i){
+            if(!defaultSupportedColorSpaceSDR(formats[i].colorSpace)){
+                continue;
+            }
+            if(VK_FORMAT_B8G8R8A8_SRGB == formats[i].format
+                || VK_FORMAT_R8G8B8A8_SRGB == formats[i].format){
+                format = formats[i].format;
+                break;
+            }
+        }
+        if(VK_FORMAT_UNDEFINED != format){
+            dst ={format, colorSpace};
+            return true;
+        }
+
+        for(u32 i=0; i<size; ++i){
+            if(!defaultSupportedColorSpaceSDR(formats[i].colorSpace)){
+                continue;
+            }
+            if(VK_FORMAT_B8G8R8A8_UNORM == formats[i].format
+                || VK_FORMAT_R8G8B8A8_UNORM == formats[i].format){
+                format = formats[i].format;
+                break;
+            }
+        }
+        if(VK_FORMAT_UNDEFINED != format){
+            dst ={format, colorSpace};
             return true;
         }
         return false;
     }
 
-    PhysicalDevices System::enumeratePhysicalDevices()
+    bool System::defaultCheckSurfaceFormatHDR(VkSurfaceFormatKHR& dst, u32 size, const VkSurfaceFormatKHR* formats)
     {
-        return instance_.enumeratePhysicalDevices();
-    }
+        CPPVK_ASSERT(0<size);
 
-    bool System::createDevice(s32 index, DeviceCreateInfo& createInfo, const Char* layerName, PFN_checkQueueFamily checkQueueFamily, PFN_checkExtensions checkExtensions, PFN_checkDeviceFeatures checkDeviceFeatures, const VkAllocationCallbacks* allocator)
-    {
-        CPPVK_ASSERT(CPPVK_NULL != checkQueueFamily);
-
-        QueueFamilyProperties queueFamilyProperties;
-        DeviceExtensionProperties deviceExtensionProperties;
-        VkPhysicalDeviceFeatures features;
-
-        PhysicalDevices physicalDevices = instance_.enumeratePhysicalDevices();
-        for(u32 i=0; i<physicalDevices.size(); ++i){
-            PhysicalDevice physicalDevice = physicalDevices[i];
-            physicalDevice.getPhysicalDeviceQueueFamilyProperties(queueFamilyProperties);
-
-            s32 selectedQueueFamily = queueFamilyProperties.selectQueueFamily(checkQueueFamily);
-            if(selectedQueueFamily<0){
-                continue;
-            }
-
-            if(CPPVK_NULL != checkExtensions){
-                physicalDevice.enumerateDeviceExtensionProperties(deviceExtensionProperties, layerName);
-                createInfo.enabledExtensionCount_ = deviceExtensionProperties.getExtensions(createInfo.enabledExtensionNames_, checkExtensions);
-            }
-
-            if(CPPVK_NULL != checkDeviceFeatures){
-                VkPhysicalDeviceFeatures supported;
-                physicalDevice.getPhysicalDeviceFeatures(supported);
-                memset(&features, 0, sizeof(VkPhysicalDeviceFeatures));
-                if(!checkDeviceFeatures(features, supported)){
-                    continue;
-                }
-                createInfo.enabledFeatures_ = &features;
-            }else{
-                createInfo.enabledFeatures_ = CPPVK_NULL;
-            }
-
-            VkDeviceQueueCreateInfo queueCreateInfo ={
-                VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, //structure type
-                CPPVK_NULL, //next
-                createInfo.deviceQueueCreateFlags_, //device queue creation flags
-                static_cast<u32>(selectedQueueFamily),//selected queue family's index
-                createInfo.queueCount_, //queue count
-                createInfo.queuePriorities_, //queue priorities
-            };
-
-            VkDeviceCreateInfo deviceCreateInfo ={
-                VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, //structure type
-                CPPVK_NULL,
-                createInfo.deviceCreateFlags_, //device create flags
-                1, //queue create info count,
-                &queueCreateInfo, //queue create info
-                createInfo.enabledLayerCount_, //enabled layer count
-                createInfo.enabledLayerNames_, //enabled layer names
-                createInfo.enabledExtensionCount_, //enabled extension count
-                createInfo.enabledExtensionNames_, //enabled extension names
-                createInfo.enabledFeatures_, //enabled physical device features
-            };
-
-            if(VK_SUCCESS == Device::create(devices_[index], physicalDevice, deviceCreateInfo, allocator)){
-                return true;
+        //Find a format supports the HDR color space
+        VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_MAX_ENUM_KHR;
+        for(u32 i=0; i<size; ++i){
+            if(defaultSupportedColorSpaceHDR(formats[i].colorSpace)){
+                colorSpace = formats[i].colorSpace;
+                break;
             }
         }
-        return false;
+        if(VK_COLOR_SPACE_MAX_ENUM_KHR == colorSpace){
+            return defaultCheckSurfaceFormatSDR(dst, size, formats);
+        }
+
+        VkFormat format = VK_FORMAT_UNDEFINED;
+        for(u32 i=0; i<size; ++i){
+            if(!defaultSupportedColorSpaceHDR(formats[i].colorSpace)){
+                continue;
+            }
+            if(VK_FORMAT_A2R10G10B10_UNORM_PACK32 == formats[i].format
+                || VK_FORMAT_A2B10G10R10_UNORM_PACK32 == formats[i].format){
+                format = formats[i].format;
+                break;
+            }
+        }
+        if(VK_FORMAT_UNDEFINED != format){
+            dst ={format, colorSpace};
+            return true;
+        }
+
+        for(u32 i=0; i<size; ++i){
+            if(!defaultSupportedColorSpaceHDR(formats[i].colorSpace)){
+                continue;
+            }
+            if(VK_FORMAT_R16G16B16A16_UNORM == formats[i].format){
+                format = formats[i].format;
+                break;
+            }
+        }
+        if(VK_FORMAT_UNDEFINED != format){
+            dst ={format, colorSpace};
+            return true;
+        }
+        return defaultCheckSurfaceFormatSDR(dst, size, formats);
     }
 
-    bool System::createPresentSurface(const Instance::SurfaceCreateInfo& createInfo)
+    VkPresentModeKHR System::getPresentMode(u32 size, const VkPresentModeKHR* presentModes, VkPresentModeKHR request)
     {
-        return VK_SUCCESS == instance_.createPresentSurface(createInfo);
+        CPPVK_ASSERT(0<size);
+
+        for(u32 i=0; i<size; ++i){
+            if(presentModes[i] == request){
+                return presentModes[i];
+            }
+        }
+        for(u32 i=0; i<size; ++i){
+            if(presentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR){
+                return presentModes[i];
+            }
+        }
+        for(u32 i=0; i<size; ++i){
+            if(presentModes[i] == VK_PRESENT_MODE_FIFO_KHR){
+                return presentModes[i];
+            }
+        }
+        return presentModes[0];
     }
 }
