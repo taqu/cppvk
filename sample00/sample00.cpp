@@ -1,25 +1,43 @@
-#include "cppvk.h"
 #include <stdio.h>
+#include "cppvk.h"
+#include "Window.h"
 
 bool checkInstanceExtensions(const VkExtensionProperties& properties);
-bool checkQueueFamily(const VkQueueFamilyProperties& properties);
-bool checkDeviceExtensions(const VkExtensionProperties& properties);
-bool checkDeviceFeatures(VkPhysicalDeviceFeatures& dst, const VkPhysicalDeviceFeatures& supported);
 
 void printPhysicalDevice(cppvk::PhysicalDevice device);
 
 int main(int /*argc*/, char** /*argv*/)
 {
-    cppvk::System system;
-
-    //Load library
-    if(!system.initialize()){
-        fprintf(stderr, "Fail to initialize lib\n");
-        return 0;
-    }
+    lgfx::Window window;
     {
-        // Create instance
-        //---------------------------------------------------------------------
+        HINSTANCE hInstance = CPPVK_NULL;
+        if(FALSE == GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, NULL, &hInstance)){
+            return 0;
+        }
+        lgfx::Window::InitParam initParam = {
+            hInstance,
+            400,
+            300,
+            0,0,
+            CPPVK_NULL,
+            "Tutorial",
+            true,
+        };
+        if(!window.create(initParam)){
+            return 0;
+        }
+    }
+
+    // Create instance
+    //---------------------------------------------------------------------
+    {
+        //Load library
+        cppvk::System system;
+        if(!system.initialize()){
+            fprintf(stderr, "Fail to initialize lib\n");
+            return 0;
+        }
+
         printf("Create Instance\n");
         cppvk::InstanceCreateInfo instanceCreateInfo = {
             "Tutorial Vulkan", //application name
@@ -28,47 +46,29 @@ int main(int /*argc*/, char** /*argv*/)
             VK_MAKE_VERSION(1,0,0), //engine version
             VK_API_VERSION_1_0, //api version
 
-            0, //instance creation flags
             0, //enabled layer count
-            CPPVK_NULL, //enabled layer names
-            0, //enabled extension count
-            CPPVK_NULL, //enabled extension names
+            {CPPVK_NULL}, //enabled layer names
+
+            checkInstanceExtensions,
         };
 
-        if(!system.createInstance(instanceCreateInfo, CPPVK_NULL, checkInstanceExtensions, CPPVK_NULL)){
+        cppvk::SurfaceCreateInfo surfaceCreateInfo = {
+            0,
+            window.getInstance(),
+            window.getHandle(),
+        };
+
+        if(!system.createInstance(instanceCreateInfo, surfaceCreateInfo, CPPVK_NULL, CPPVK_NULL)){
             fprintf(stderr, "Fail to create instance\n");
             return 0;
         }
 
         // Enumerate Physical Devices
         //---------------------------------------------------------------------
-        cppvk::PhysicalDevices physicalDevices = system.enumeratePhysicalDevices();
-        for(cppvk::u32 i=0; i<physicalDevices.size(); ++i){
+        cppvk::PhysicalDevice physicalDevices[CPPVK_MAX_PHYSICAL_DEVICES];
+        cppvk::u32 numPycinalDevices = system.getInstance().enumeratePhysicalDevices(CPPVK_MAX_PHYSICAL_DEVICES, physicalDevices);
+        for(cppvk::u32 i=0; i<numPycinalDevices; ++i){
             printPhysicalDevice(physicalDevices[i]);
-        }
-
-
-        // Create Device
-        //---------------------------------------------------------------------
-        printf("Create Device\n");
-        const cppvk::f32 queuePriorities[] = {1.0f};
-        cppvk::DeviceCreateInfo deviceCreateInfo = {
-            0, //device queue creation flags
-            0, //selected queue family's index
-            1, //queue count
-            queuePriorities, //queue priorities
-
-            0, //device creation flags
-            1, //queue create info count,
-            0, //enabled layer count
-            CPPVK_NULL, //enabled layer names
-            0, //enabled extension count
-            CPPVK_NULL, //enabled extension names
-            CPPVK_NULL, //enabled physical device features
-        };
-        if(!system.createDevice(0, deviceCreateInfo, CPPVK_NULL, checkQueueFamily, checkDeviceExtensions, checkDeviceFeatures, CPPVK_NULL)){
-            fprintf(stderr, "Fail to create device\n");
-            return 0;
         }
     }
     return 0;
@@ -77,46 +77,32 @@ int main(int /*argc*/, char** /*argv*/)
 bool checkInstanceExtensions(const VkExtensionProperties& properties)
 {
     printf(" %s\n", properties.extensionName);
-    return false;
-}
-
-bool checkQueueFamily(const VkQueueFamilyProperties& properties)
-{
-    if(0<properties.queueCount && (properties.queueFlags & VK_QUEUE_GRAPHICS_BIT)){
-        return true;
-    }
-    return false;
-}
-
-bool checkDeviceExtensions(const VkExtensionProperties& properties)
-{
-    printf(" %s\n", properties.extensionName);
-    return false;
-}
-
-bool checkDeviceFeatures(VkPhysicalDeviceFeatures& dst, const VkPhysicalDeviceFeatures& supported)
-{
-    dst.geometryShader = supported.geometryShader;
-    dst.tessellationShader = supported.tessellationShader;
-    dst.logicOp = supported.logicOp;
-    dst.multiDrawIndirect = supported.multiDrawIndirect;
-    dst.drawIndirectFirstInstance = supported.drawIndirectFirstInstance;
-    dst.depthClamp = supported.depthClamp;
-    dst.depthBiasClamp = supported.depthBiasClamp;
-    dst.depthBounds = supported.depthBounds;
-    dst.samplerAnisotropy = supported.samplerAnisotropy;
-    dst.drawIndirectFirstInstance = supported.drawIndirectFirstInstance;
-#if defined(CPPVK_USE_PLATFORM_ANDROID_KHR)
-    dst.textureCompressionETC2 = supported.textureCompressionETC2;
-#endif
-    dst.textureCompressionASTC_LDR = supported.textureCompressionASTC_LDR;
-    dst.textureCompressionBC = supported.textureCompressionBC;
-    dst.shaderClipDistance = supported.shaderClipDistance;
-    dst.shaderCullDistance = supported.shaderCullDistance;
-    dst.shaderInt16 = supported.shaderInt16;
-
     return true;
 }
+
+//bool checkDeviceFeatures(VkPhysicalDeviceFeatures& dst, const VkPhysicalDeviceFeatures& supported)
+//{
+//    dst.geometryShader = supported.geometryShader;
+//    dst.tessellationShader = supported.tessellationShader;
+//    dst.logicOp = supported.logicOp;
+//    dst.multiDrawIndirect = supported.multiDrawIndirect;
+//    dst.drawIndirectFirstInstance = supported.drawIndirectFirstInstance;
+//    dst.depthClamp = supported.depthClamp;
+//    dst.depthBiasClamp = supported.depthBiasClamp;
+//    dst.depthBounds = supported.depthBounds;
+//    dst.samplerAnisotropy = supported.samplerAnisotropy;
+//    dst.drawIndirectFirstInstance = supported.drawIndirectFirstInstance;
+//#if defined(CPPVK_USE_PLATFORM_ANDROID_KHR)
+//    dst.textureCompressionETC2 = supported.textureCompressionETC2;
+//#endif
+//    dst.textureCompressionASTC_LDR = supported.textureCompressionASTC_LDR;
+//    dst.textureCompressionBC = supported.textureCompressionBC;
+//    dst.shaderClipDistance = supported.shaderClipDistance;
+//    dst.shaderCullDistance = supported.shaderCullDistance;
+//    dst.shaderInt16 = supported.shaderInt16;
+//
+//    return true;
+//}
 
 void printPhysicalDevice(cppvk::PhysicalDevice device)
 {

@@ -7,7 +7,7 @@ project(${ProjectName})
 
 include_directories(AFTER ${CMAKE_CURRENT_SOURCE_DIR})
 
-set(HEADERS "../vk_platform.h;../vulkan.h;../cppvk.h;../Window.h")
+set(HEADERS "../vk_platform.h;../vulkan.h;../lgfx_config.h;../lgfx.h;../lvk.h;../Window.h")
 set(SOURCES "../cppvk.cpp;../Window.cpp;sample01.cpp;")
 
 source_group("include" FILES ${HEADERS})
@@ -19,8 +19,8 @@ add_executable(${ProjectName} ${FILES})
 
 if(MSVC)
     set(CMAKE_CXX_FLAGS "${DEFAULT_CXX_FLAGS}")
-    set(CMAKE_CXX_FLAGS_DEBUG "/D_DEBUG /DMU3_EXPORTS /MTd /Zi /Ob0 /Od /RTC1 /Gy /GR- /GS /Gm-")
-    set(CMAKE_CXX_FLAGS_RELEASE "/DMU3_EXPORTS /MT /O2 /GL /GR- /DNDEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "/D_DEBUG /MTd /Zi /Ob0 /Od /RTC1 /Gy /GR- /GS /Gm-")
+    set(CMAKE_CXX_FLAGS_RELEASE "/MT /O2 /GL /GR- /DNDEBUG")
 
 elseif(UNIX)
     set(CMAKE_CXX_FLAGS "${DEFAULT_CXX_FLAGS}")

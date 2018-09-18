@@ -9,6 +9,8 @@
 #include <cassert>
 #endif
 
+#include <utility>
+
 #ifdef __cplusplus
 #   if 201103L<=__cplusplus || 1900<=_MSC_VER
 #       define CPPVK_CPP11 1
@@ -78,6 +80,7 @@
 
 namespace cppvk
 {
+    //--------------------------------------------------------------
 #define CPPVK_REPORT_ERROR 1
 #define CPPVK_REPORT_WARNING 1
 
@@ -101,26 +104,54 @@ namespace cppvk
     typedef float f32;
     typedef double f64;
 
+    using std::move;
+
     template<class T>
-    inline const T& maximum(const T& x0, const T& x1)
+    inline T maximum(const T& x0, const T& x1)
     {
         return (x0<x1)? x1 : x0;
     }
 
     template<class T>
-    inline const T& minimum(const T& x0, const T& x1)
+    inline T minimum(const T& x0, const T& x1)
     {
         return (x0<x1)? x0 : x1;
     }
 
-    //-------------------------------------------------------------------------------
+    template<class T>
+    T clamp(const T& x, const T& minx, const T& maxx)
+    {
+        if(x<minx){
+            return minx;
+        }else if(maxx<x){
+            return maxx;
+        }else{
+            return x;
+        }
+    }
+
+    //--------------------------------------------------------------
 #define CPPVK_EXPORTED_FUNCTION(name) extern PFN_ ## name name;
 #include "VkFunctions.inc"
 
     //--------------------------------------------------------------
+    enum QueueType : u32
+    {
+        QueueType_Present =0,
+        QueueType_Graphics,
+        QueueType_Compute,
+        QueueType_Transfer,
+        QueueType_SparceBinding,
+        QueueType_Max,
+        QueueType_Invalid = 0xFFFFFFFFU,
+    };
+
+    //--------------------------------------------------------------
     typedef bool (*PFN_checkExtensions)(const VkExtensionProperties& properties);
-    typedef bool (*PFN_checkQueueFamily)(const VkQueueFamilyProperties& properties);
+    typedef void (*PFN_checkQueueFamilies)(u32 queueFamilyIndices[QueueType_Max], u32 numQueueFamilies, VkQueueFamilyProperties* queueFamilyProperties, const bool* queueFamilyPresentationSupports, const bool* requests);
     typedef bool (*PFN_checkDeviceFeatures)(VkPhysicalDeviceFeatures& dst, const VkPhysicalDeviceFeatures& supported);
+    typedef bool (*PFN_checkSurfaceFormats)(VkSurfaceFormatKHR& dst, u32 size, const VkSurfaceFormatKHR* formats);
+    typedef bool (*PFN_checkSurfaceCapabilities)(VkImageUsageFlags& imageUsageFlags, VkSurfaceTransformFlagBitsKHR& preTransform, VkCompositeAlphaFlagBitsKHR& compsiteAlpha, const VkSurfaceCapabilitiesKHR& surfaceCapabilities);
 
     class Instance;
     class Device;
@@ -139,30 +170,84 @@ namespace cppvk
         u32 apiVersion_;
 
         //Instance info
-        VkInstanceCreateFlags createFlags_;
         u32 enabledLayerCount_;
         const Char* enabledLayerNames_[CPPVK_MAX_LAYERS];
-        u32 enabledExtensionCount_;
-        const Char* enabledExtensionNames_[CPPVK_MAX_INSTANCE_EXTENSION_PROPERTIES];
+
+        PFN_checkExtensions checkExtensions_;
     };
 
     //--------------------------------------------------------------
     struct DeviceCreateInfo
     {
         //Device queue info
-        VkDeviceQueueCreateFlags deviceQueueCreateFlags_;
-        u32 queueFamilyIndex_;
-        u32 queueCount_;
-        const f32* queuePriorities_;
+        bool requestQueueTypes_[QueueType_Max];
 
         //
-        VkDeviceCreateFlags deviceCreateFlags_;
         u32 enabledLayerCount_;
         const Char* enabledLayerNames_[CPPVK_MAX_LAYERS];
-        u32 enabledExtensionCount_;
-        const Char* enabledExtensionNames_[CPPVK_MAX_DEVICE_EXTENSION_PROPERTIES];
-        VkPhysicalDeviceFeatures* enabledFeatures_;
+
+        //
+        PFN_checkQueueFamilies checkQueueFamilies_;
+        PFN_checkExtensions checkExtensions_;
+        PFN_checkDeviceFeatures checkDeviceFeatures_;
     };
+
+    //--------------------------------------------------------------
+    struct SurfaceCreateInfo
+    {
+#ifdef CPPVK_USE_PLATFORM_XLIB_KHR
+        VkXlibSurfaceCreateFlagsKHR flags_;
+        Display* display_;
+        Window window_;
+#endif
+
+#ifdef CPPVK_USE_PLATFORM_XCB_KHR
+        VkXcbSurfaceCreateFlagsKHR flags_;
+        xcb_connection_t* connection_;
+        xcb_window_t window_;
+#endif
+
+#ifdef CPPVK_USE_PLATFORM_WAYLAND_KHR
+        VkWaylandSurfaceCreateFlagsKHR flags_;
+        wl_display* display_;
+        wl_surface* surface_;
+#endif
+
+#ifdef CPPVK_USE_PLATFORM_MIR_KHR
+        VkMirSurfaceCreateFlagsKHR flags_;
+        MirConnection* connection_;
+        MirSurface* surface_;
+#endif
+
+#ifdef CPPVK_USE_PLATFORM_ANDROID_KHR
+        VkAndroidSurfaceCreateFlagsKHR flags_;
+        ANativeWindow* window_;
+#endif
+
+#ifdef CPPVK_USE_PLATFORM_WIN32_KHR
+        VkWin32SurfaceCreateFlagsKHR flags_;
+        HINSTANCE hInstance_;
+        HWND hWnd_;
+#endif
+    };
+
+    //--------------------------------------------------------------
+    struct SwapchainCreateInfo
+    {
+        bool supportHDR_;
+        u32 swapchainCount_;
+        VkPresentModeKHR presentMode_;
+        VkExtent2D surfaceExtent_;
+
+        PFN_checkSurfaceCapabilities checkSurfaceCapabilities_;
+        PFN_checkSurfaceFormats checkSurfaceFormats_;
+    };
+
+    //--------------------------------------------------------------
+    //---
+    //--- Builder
+    //---
+    //--------------------------------------------------------------
 
     //--------------------------------------------------------------
     //---
@@ -181,7 +266,9 @@ namespace cppvk
         void terminate();
     private:
         Lib(const Lib&) = delete;
+        Lib(Lib&&) = delete;
         Lib& operator=(const Lib&) = delete;
+        Lib& operator=(Lib&&) = delete;
 
         CPPVK_DLHANDLE handle_;
     };
@@ -244,27 +331,6 @@ namespace cppvk
 
     //--------------------------------------------------------------
     //---
-    //--- QueueFamilyProperties
-    //---
-    //--------------------------------------------------------------
-    class QueueFamilyProperties
-    {
-    public:
-        static const u32 MaxProperties = CPPVK_MAX_QUEUE_FAMILY_PROPERTIES;
-
-        QueueFamilyProperties();
-        ~QueueFamilyProperties();
-
-        s32 selectQueueFamily(PFN_checkQueueFamily checkQueueFamily) const;
-    private:
-        friend class PhysicalDevice;
-
-        u32 numQueueFamilyProperties_;
-        VkQueueFamilyProperties queueFamilyProperties_[MaxProperties];
-    };
-
-    //--------------------------------------------------------------
-    //---
     //--- PhysicalDevice
     //---
     //--------------------------------------------------------------
@@ -317,13 +383,7 @@ namespace cppvk
         /**
         @brief
         */
-        void getPhysicalDeviceQueueFamilyProperties(QueueFamilyProperties& queueFamilyProperties);
-
-        /**
-        @brief
-        @return
-        */
-        void enumerateDeviceExtensionProperties(DeviceExtensionProperties& properties, const Char* layerName);
+        inline void enumerateDeviceExtensionProperties(DeviceExtensionProperties& properties, const Char* layerName);
     private:
         friend class Instance;
 
@@ -375,42 +435,10 @@ namespace cppvk
         vkGetPhysicalDeviceMemoryProperties(device_, &memoryProperties);
     }
 
-    //--------------------------------------------------------------
-
-    //---
-    //--- PhysicalDevices
-    //---
-    //--------------------------------------------------------------
-    /**
-    */
-    class PhysicalDevices
+    inline void PhysicalDevice::enumerateDeviceExtensionProperties(DeviceExtensionProperties& properties, const Char* layerName)
     {
-    public:
-        static const s32 MaxPhysicalDevices = CPPVK_MAX_PHYSICAL_DEVICES;
-        /**
-        */
-        inline u32 size() const;
-
-        /**
-        */
-        inline const PhysicalDevice& operator[](u32 index) const;
-
-    private:
-        friend class Instance;
-
-        u32 numDevices_;
-        PhysicalDevice devices_[MaxPhysicalDevices];
-    };
-
-    inline u32 PhysicalDevices::size() const
-    {
-        return numDevices_;
-    }
-
-    inline const PhysicalDevice& PhysicalDevices::operator[](u32 index) const
-    {
-        CPPVK_ASSERT(index<numDevices_);
-        return devices_[index];
+        properties.numExtensionProperties_ = DeviceExtensionProperties::MaxProperties;
+        vkEnumerateDeviceExtensionProperties(device_, layerName, &properties.numExtensionProperties_, properties.extensionProperties_);
     }
 
     //--------------------------------------------------------------
@@ -421,7 +449,11 @@ namespace cppvk
     class Instance
     {
     public:
-        static VkResult create(Instance& instance, const VkInstanceCreateInfo& createInfo, const VkAllocationCallbacks* allocator);
+        static VkResult create(
+            Instance& instance,
+            const VkInstanceCreateInfo& instanceCreateInfo,
+            const SurfaceCreateInfo& surfaceCreateInfo,
+            const VkAllocationCallbacks* allocator);
 
         Instance();
         ~Instance();
@@ -433,52 +465,29 @@ namespace cppvk
 
         inline const VkAllocationCallbacks* getAllocator();
 
-        PhysicalDevices enumeratePhysicalDevices();
-        inline VkSurfaceKHR getPresentSurface();
-
-#ifdef CPPVK_USE_PLATFORM_XLIB_KHR
-        typedef VkXlibSurfaceCreateInfoKHR SurfaceCreateInfo;
-#endif
-
-#ifdef CPPVK_USE_PLATFORM_XCB_KHR
-        typedef VkXcbSurfaceCreateInfoKHR SurfaceCreateInfo;
-#endif
-
-#ifdef CPPVK_USE_PLATFORM_WAYLAND_KHR
-        typedef VkWaylandSurfaceCreateInfoKHR SurfaceCreateInfo;
-#endif
-
-#ifdef CPPVK_USE_PLATFORM_MIR_KHR
-        typedef VkMirSurfaceCreateInfoKHR SurfaceCreateInfo;
-#endif
-
-#ifdef CPPVK_USE_PLATFORM_ANDROID_KHR
-        typedef VkAndroidSurfaceCreateInfoKHR SurfaceCreateInfo;
-#endif
-
-#ifdef CPPVK_USE_PLATFORM_WIN32_KHR
-        typedef VkWin32SurfaceCreateInfoKHR SurfaceCreateInfo;
-#endif
-
-        VkResult createPresentSurface(const SurfaceCreateInfo& createInfo);
-
+        u32 enumeratePhysicalDevices(u32 maxDevices, PhysicalDevice* devices) const;
+        inline VkSurfaceKHR getPresentationSurface();
 
 #define CPPVK_EXT_INSTANCE_FUNCTION(name) PFN_ ## name name;
 #include "VkFunctions.inc"
 
-    private:
-        friend class Lib;
+        /**
+        @brief
+        */
+        bool getPhysicalDevicePresentationSurfaceSupport(PhysicalDevice physicalDevice, u32 queueFamilyIndex);
 
+    private:
         Instance(const Instance&) = delete;
-        Instance(Instance&& rhs) = delete;
+        Instance(Instance&&) = delete;
         Instance& operator=(const Instance&) = delete;
-        Instance& operator=(Instance&& rhs) = delete;
+        Instance& operator=(Instance&&) = delete;
 
         VkResult initialize();
+        VkResult createPresentationSurface(const SurfaceCreateInfo& createInfo);
 
         VkInstance instance_;
-        VkSurfaceKHR presentSurface_;
         const VkAllocationCallbacks* allocator_;
+        VkSurfaceKHR presentationSurface_;
     };
 
     inline bool Instance::valid() const
@@ -496,132 +505,14 @@ namespace cppvk
         return instance_;
     }
 
-    inline VkSurfaceKHR Instance::getPresentSurface()
+    inline VkSurfaceKHR Instance::getPresentationSurface()
     {
-        return presentSurface_;
+        return presentationSurface_;
     }
 
     inline const VkAllocationCallbacks* Instance::getAllocator()
     {
         return allocator_;
-    }
-
-    //--------------------------------------------------------------
-    //---
-    //--- Device
-    //---
-    //--------------------------------------------------------------
-    /**
-    */
-    class Device
-    {
-    public:
-        static const s32 MaxQueues = 4;
-        static const s32 GraphicsQueue = 0;
-        static const s32 ComputeQueue = 1;
-        static const s32 PresentQueue = 2;
-        static const s32 MaxCommandBuffers = 8;
-
-        static VkResult create(Device& device, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo& createInfo, const VkAllocationCallbacks* allocator);
-
-        Device();
-        ~Device();
-
-        void destroy();
-
-        inline bool valid() const;
-        inline operator const VkDevice() const;
-        inline operator VkDevice();
-
-        VkResult waitIdle();
-
-        /**
-        */
-        VkResult createSwapchain(Swapchain& swapchain, VkSwapchainCreateInfoKHR& createInfo, const VkAllocationCallbacks* allocator);
-        /**
-        */
-        void destroySwapchain(Swapchain& swapchain, const VkAllocationCallbacks* allocator);
-
-        /**
-        */
-        VkResult createCommandPool(CommandPool& commandPool, const VkCommandPoolCreateInfo& createInfo, const VkAllocationCallbacks* allocator);
-        /**
-        */
-        void destroyCommandPool(CommandPool& commandPool, const VkAllocationCallbacks* allocator);
-        /**
-        */
-        VkResult resetCommandPool(CommandPool& commandPool, VkCommandPoolResetFlags flags);
-
-        /**
-        */
-        VkResult allocateCommandBuffers(CommandBuffer* commandBuffers, const VkCommandBufferAllocateInfo& allocateInfo);
-        /**
-        */
-        void deallocateCommandBuffers(u32 numBuffers, CommandBuffer* commandBuffers, CommandPool& commandPool);
-
-        inline u32 getNumQueues() const;
-        inline VkQueue& getQueue(u32 index);
-
-        inline VkResult submit(s32 queue, u32 numSubmits, const VkSubmitInfo* submits, VkFence fence);
-        inline VkResult queueWaitIdle(s32 queue);
-
-#define CPPVK_EXT_DEVICE_FUNCTION(name) PFN_ ## name name;
-#include "VkFunctions.inc"
-
-    private:
-        Device(const Device&) = delete;
-        Device(Device&& rhs) = delete;
-        Device& operator=(const Device&) = delete;
-        Device& operator=(Device&& rhs) = delete;
-
-        VkResult initialize(const VkAllocationCallbacks* allocator);
-
-        VkDevice device_;
-        u32 numQueues_;
-        u32 queueFamilyIndices_[MaxQueues];
-        VkQueue queues_[MaxQueues];
-        //VkSemaphore semaphoreImageAvailable_;
-        //VkSemaphore semaphoreRenderingFinished_;
-        const VkAllocationCallbacks* allocator_;
-    };
-
-    inline bool Device::valid() const
-    {
-        return CPPVK_NULL != device_;
-    }
-
-    inline Device::operator const VkDevice() const
-    {
-        return device_;
-    }
-
-    inline Device::operator VkDevice()
-    {
-        return device_;
-    }
-
-    inline u32 Device::getNumQueues() const
-    {
-        return numQueues_;
-    }
-
-    inline VkQueue& Device::getQueue(u32 index)
-    {
-        CPPVK_ASSERT(0<=index && index<numQueues_);
-        return queues_[index];
-    }
-
-    inline VkResult Device::submit(s32 queue, u32 numSubmits, const VkSubmitInfo* submits, VkFence fence)
-    {
-        CPPVK_ASSERT(CPPVK_NULL != device_);
-        CPPVK_ASSERT(0<=queue && queue<MaxQueues);
-        CPPVK_ASSERT(CPPVK_NULL != submits);
-        return vkQueueSubmit(queues_[queue], numSubmits, submits, fence);
-    }
-
-    inline VkResult Device::queueWaitIdle(s32 queue)
-    {
-        return vkQueueWaitIdle(queues_[queue]);
     }
 
     //--------------------------------------------------------------
@@ -634,10 +525,14 @@ namespace cppvk
     class Swapchain
     {
     public:
-        static const s32 MaxSwapchainImages = 4;
+        static const s32 MaxSwapchainImages = CPPVK_MAX_SWAPCHAINMAX;
+
+        static VkResult create(Swapchain& swapchain, Device& device, VkSwapchainCreateInfoKHR& createInfo, const VkAllocationCallbacks* allocator);
 
         Swapchain();
         ~Swapchain();
+
+        void destroy(Device& device);
 
         inline bool valid() const;
         inline operator const VkSwapchainKHR() const;
@@ -646,13 +541,14 @@ namespace cppvk
         inline s32 getNumImages() const;
         inline VkImage getImage(s32 index);
     private:
-        friend class Device;
-
         Swapchain(const Swapchain&) = delete;
+        Swapchain(Swapchain&&) = delete;
         Swapchain& operator=(const Swapchain&) = delete;
+        Swapchain& operator=(Swapchain&&) = delete;
 
         VkSwapchainKHR swapchain_;
-        s32 numImages_;
+        const VkAllocationCallbacks* allocator_;
+        u32 numImages_;
         VkImage images_[MaxSwapchainImages];
     };
 
@@ -680,6 +576,112 @@ namespace cppvk
     {
         CPPVK_ASSERT(0<=numImages_ && numImages_<MaxSwapchainImages);
         return images_[index];
+    }
+
+    //--------------------------------------------------------------
+    //---
+    //--- Device
+    //---
+    //--------------------------------------------------------------
+    /**
+    */
+    class Device
+    {
+    public:
+        static const s32 MaxCommandBuffers = 8;
+
+        static VkResult create(
+            Device& device,
+            VkPhysicalDevice physicalDevice,
+            const VkDeviceCreateInfo& deviceCreateInfo,
+            const u32 queueFamilityIndices[QueueType_Max],
+            VkSwapchainCreateInfoKHR& swapchainCreateInfo,
+            const VkAllocationCallbacks* allocator);
+
+        Device();
+        ~Device();
+
+        void destroy();
+
+        inline bool valid() const;
+        inline operator const VkDevice() const;
+        inline operator VkDevice();
+
+        VkResult waitIdle();
+
+        /**
+        */
+        VkResult createCommandPool(CommandPool& commandPool, const VkCommandPoolCreateInfo& createInfo, const VkAllocationCallbacks* allocator);
+        /**
+        */
+        void destroyCommandPool(CommandPool& commandPool, const VkAllocationCallbacks* allocator);
+        /**
+        */
+        VkResult resetCommandPool(CommandPool& commandPool, VkCommandPoolResetFlags flags);
+
+        /**
+        */
+        VkResult allocateCommandBuffers(CommandBuffer* commandBuffers, const VkCommandBufferAllocateInfo& allocateInfo);
+        /**
+        */
+        void deallocateCommandBuffers(u32 numBuffers, CommandBuffer* commandBuffers, CommandPool& commandPool);
+
+        inline VkQueue& getQueue(u32 index);
+
+        inline VkResult submit(s32 queue, u32 numSubmits, const VkSubmitInfo* submits, VkFence fence);
+        inline VkResult queueWaitIdle(s32 queue);
+
+#define CPPVK_EXT_DEVICE_FUNCTION(name) PFN_ ## name name;
+#include "VkFunctions.inc"
+
+    private:
+        Device(const Device&) = delete;
+        Device(Device&&) = delete;
+        Device& operator=(const Device&) = delete;
+        Device& operator=(Device&&) = delete;
+
+        VkResult initialize();
+        VkResult createSemaphores();
+
+        VkDevice device_;
+        const VkAllocationCallbacks* allocator_;
+        VkQueue queues_[QueueType_Max];
+        VkSemaphore semaphoreImageAvailable_;
+        VkSemaphore semaphoreRenderingFinished_;
+        Swapchain swapchain_;
+    };
+
+    inline bool Device::valid() const
+    {
+        return CPPVK_NULL != device_;
+    }
+
+    inline Device::operator const VkDevice() const
+    {
+        return device_;
+    }
+
+    inline Device::operator VkDevice()
+    {
+        return device_;
+    }
+
+    inline VkQueue& Device::getQueue(u32 index)
+    {
+        return queues_[index];
+    }
+
+    inline VkResult Device::submit(s32 queue, u32 numSubmits, const VkSubmitInfo* submits, VkFence fence)
+    {
+        //CPPVK_ASSERT(CPPVK_NULL != device_);
+        //CPPVK_ASSERT(0<=queue && queue<MaxQueues);
+        CPPVK_ASSERT(CPPVK_NULL != submits);
+        return vkQueueSubmit(queues_[queue], numSubmits, submits, fence);
+    }
+
+    inline VkResult Device::queueWaitIdle(s32 queue)
+    {
+        return vkQueueWaitIdle(queues_[queue]);
     }
 
     //--------------------------------------------------------------
@@ -909,19 +911,50 @@ namespace cppvk
         bool initialize();
         void terminate();
 
-        void getInstanceExtensionProperties(InstanceExtensionProperties& properties, const Char* layerName);
-        PhysicalDevices enumeratePhysicalDevices();
+        inline Instance& getInstance();
 
-        bool createInstance(InstanceCreateInfo& createInfo, const Char* layerName, PFN_checkExtensions checkExtensions, const VkAllocationCallbacks* allocator);
-        bool createDevice(s32 index, DeviceCreateInfo& createInfo, const Char* layerName, PFN_checkQueueFamily checkQueueFamily, PFN_checkExtensions checkExtensions, PFN_checkDeviceFeatures checkDeviceFeatures, const VkAllocationCallbacks* allocator);
-        bool createPresentSurface(const Instance::SurfaceCreateInfo& createInfo);
+        void getInstanceExtensionProperties(InstanceExtensionProperties& properties, const Char* layerName);
+
+        bool createInstance(
+            const InstanceCreateInfo& instanceCreateInfo,
+            const SurfaceCreateInfo& surfaceCreateInfo,
+            const Char* layerName,
+            const VkAllocationCallbacks* allocator);
+
+        bool createDevice(
+            s32 index,
+            const DeviceCreateInfo& deviceCreateInfo,
+            const SwapchainCreateInfo& swapchainCreateInfo,
+            const Char* layerName,
+            const VkAllocationCallbacks* allocator);
+
+        static void defaultCheckQueueFamilies(
+            u32 queueFamilyIndices[QueueType_Max],
+            u32 numQueueFamilies,
+            VkQueueFamilyProperties* queueFamilyProperties,
+            const bool* queueFamilyPresentationSupports,
+            const bool* requests);
+        static bool defaultSupportedColorSpaceSDR(VkColorSpaceKHR colorSpace);
+        static bool defaultSupportedColorSpaceHDR(VkColorSpaceKHR colorSpace);
+
+        static bool defaultCheckSurfaceFormatSDR(VkSurfaceFormatKHR& dst, u32 size, const VkSurfaceFormatKHR* formats);
+        static bool defaultCheckSurfaceFormatHDR(VkSurfaceFormatKHR& dst, u32 size, const VkSurfaceFormatKHR* formats);
     private:
         System(const System&) = delete;
+        System(System&&) = delete;
         System& operator=(const System&) = delete;
+        System& operator=(System&&) = delete;
+
+        static VkPresentModeKHR getPresentMode(u32 size, const VkPresentModeKHR* presentModes, VkPresentModeKHR request);
 
         Lib lib_;
         Instance instance_;
         Device devices_[CPPVK_MAX_PHYSICAL_DEVICES];
     };
+
+    inline Instance& System::getInstance()
+    {
+        return instance_;
+    }
 }
 #endif //INC_CPPVK_H_
