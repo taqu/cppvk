@@ -1,16 +1,15 @@
 #include <stdio.h>
-#include "cppvk.h"
-#include "Window.h"
+#define LGFX_IMPLEMENTATION
+#include "lgfx.h"
 
-bool checkInstanceExtensions(const VkExtensionProperties& properties);
-
-void printPhysicalDevice(cppvk::PhysicalDevice device);
+void printPhysicalDevice(lgfx::PhysicalDevice device);
 
 int main(int /*argc*/, char** /*argv*/)
 {
+    //---------------------------------------------------------------------
     lgfx::Window window;
     {
-        HINSTANCE hInstance = CPPVK_NULL;
+        HINSTANCE hInstance = LGFX_NULL;
         if(FALSE == GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, NULL, &hInstance)){
             return 0;
         }
@@ -19,7 +18,7 @@ int main(int /*argc*/, char** /*argv*/)
             400,
             300,
             0,0,
-            CPPVK_NULL,
+            LGFX_NULL,
             "Tutorial",
             true,
         };
@@ -28,18 +27,12 @@ int main(int /*argc*/, char** /*argv*/)
         }
     }
 
-    // Create instance
     //---------------------------------------------------------------------
+    lgfx::System system;
     {
-        //Load library
-        cppvk::System system;
-        if(!system.initialize()){
-            fprintf(stderr, "Fail to initialize lib\n");
-            return 0;
-        }
+        lgfx::BuilderVulkan builder;
 
-        printf("Create Instance\n");
-        cppvk::InstanceCreateInfo instanceCreateInfo = {
+        builder.instanceCreateInfo_ = {
             "Tutorial Vulkan", //application name
             VK_MAKE_VERSION(1,0,0), //application version
             "Tutorial Engine", //engine name
@@ -47,64 +40,51 @@ int main(int /*argc*/, char** /*argv*/)
             VK_API_VERSION_1_0, //api version
 
             0, //enabled layer count
-            {CPPVK_NULL}, //enabled layer names
-
-            checkInstanceExtensions,
+            {LGFX_NULL}, //enabled layer names
+            LGFX_NULL,
+        };
+        builder.deviceCreateInfo_ = {
+            0,
+            {true, true, true, false, false},
+            0,
+            {LGFX_NULL},
+            LGFX_NULL,
         };
 
-        cppvk::SurfaceCreateInfo surfaceCreateInfo = {
+        builder.surfaceCreateInfo_ = {
             0,
             window.getInstance(),
             window.getHandle(),
         };
 
-        if(!system.createInstance(instanceCreateInfo, surfaceCreateInfo, CPPVK_NULL, CPPVK_NULL)){
-            fprintf(stderr, "Fail to create instance\n");
+        lgfx::Window::Vector2 viewSize = window.getViewSize();
+        builder.swapchainCreateInfo_ = {
+            false,
+            2,
+            lgfx::PresentMode_MailBox,
+            static_cast<lgfx::u32>(viewSize.x_),
+            static_cast<lgfx::u32>(viewSize.y_),
+        };
+
+        if(!system.initialize(builder)){
+            fprintf(stderr, "Fail to initialize\n");
             return 0;
         }
 
         // Enumerate Physical Devices
         //---------------------------------------------------------------------
-        cppvk::PhysicalDevice physicalDevices[CPPVK_MAX_PHYSICAL_DEVICES];
-        cppvk::u32 numPycinalDevices = system.getInstance().enumeratePhysicalDevices(CPPVK_MAX_PHYSICAL_DEVICES, physicalDevices);
-        for(cppvk::u32 i=0; i<numPycinalDevices; ++i){
+        lgfx::PhysicalDevice physicalDevices[LGFX_MAX_PHYSICAL_DEVICES];
+        lgfx::u32 numPycinalDevices = system.getInstance().enumeratePhysicalDevices(LGFX_MAX_PHYSICAL_DEVICES, physicalDevices);
+        for(lgfx::u32 i=0; i<numPycinalDevices; ++i){
             printPhysicalDevice(physicalDevices[i]);
         }
     }
+    system.terminate();
+    window.destroy();
     return 0;
 }
 
-bool checkInstanceExtensions(const VkExtensionProperties& properties)
-{
-    printf(" %s\n", properties.extensionName);
-    return true;
-}
-
-//bool checkDeviceFeatures(VkPhysicalDeviceFeatures& dst, const VkPhysicalDeviceFeatures& supported)
-//{
-//    dst.geometryShader = supported.geometryShader;
-//    dst.tessellationShader = supported.tessellationShader;
-//    dst.logicOp = supported.logicOp;
-//    dst.multiDrawIndirect = supported.multiDrawIndirect;
-//    dst.drawIndirectFirstInstance = supported.drawIndirectFirstInstance;
-//    dst.depthClamp = supported.depthClamp;
-//    dst.depthBiasClamp = supported.depthBiasClamp;
-//    dst.depthBounds = supported.depthBounds;
-//    dst.samplerAnisotropy = supported.samplerAnisotropy;
-//    dst.drawIndirectFirstInstance = supported.drawIndirectFirstInstance;
-//#if defined(CPPVK_USE_PLATFORM_ANDROID_KHR)
-//    dst.textureCompressionETC2 = supported.textureCompressionETC2;
-//#endif
-//    dst.textureCompressionASTC_LDR = supported.textureCompressionASTC_LDR;
-//    dst.textureCompressionBC = supported.textureCompressionBC;
-//    dst.shaderClipDistance = supported.shaderClipDistance;
-//    dst.shaderCullDistance = supported.shaderCullDistance;
-//    dst.shaderInt16 = supported.shaderInt16;
-//
-//    return true;
-//}
-
-void printPhysicalDevice(cppvk::PhysicalDevice device)
+void printPhysicalDevice(lgfx::PhysicalDevice device)
 {
     //--- VkPhysicalDeviceProperties
     //-----------------------------------------------------------------------
@@ -137,7 +117,7 @@ void printPhysicalDevice(cppvk::PhysicalDevice device)
         printf("  driver version %d\n", physicalDeviceProperties.driverVersion);
         printf("  device type %s\n", deviceType);
         printf("  pipeline cache UUID ");
-        for(cppvk::u32 j = 0; j<VK_UUID_SIZE; ++j){
+        for(lgfx::u32 j = 0; j<VK_UUID_SIZE; ++j){
             printf("%d", physicalDeviceProperties.pipelineCacheUUID[j]);
         }
         printf("\n");
@@ -328,10 +308,10 @@ void printPhysicalDevice(cppvk::PhysicalDevice device)
         VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
         device.getPhysicalDeviceMemoryProperties(physicalDeviceMemoryProperties);
         printf("\n memory properties\n");
-        for(cppvk::u32 j = 0; j<physicalDeviceMemoryProperties.memoryTypeCount; ++j){
+        for(lgfx::u32 j = 0; j<physicalDeviceMemoryProperties.memoryTypeCount; ++j){
             printf("  memory %d index %d propety flags %d\n", j, physicalDeviceMemoryProperties.memoryTypes[j].heapIndex, physicalDeviceMemoryProperties.memoryTypes[j].propertyFlags);
         }
-        for(cppvk::u32 j = 0; j<physicalDeviceMemoryProperties.memoryHeapCount; ++j){
+        for(lgfx::u32 j = 0; j<physicalDeviceMemoryProperties.memoryHeapCount; ++j){
             printf("  heap %d size %lld memory flags %d\n", j, physicalDeviceMemoryProperties.memoryHeaps[j].size, physicalDeviceMemoryProperties.memoryHeaps[j].flags);
         }
     }

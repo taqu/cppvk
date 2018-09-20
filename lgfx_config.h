@@ -21,6 +21,5 @@ namespace lgfx
 #define LGFX_MAX_SWAPCHAINMIN (2)
 #define LGFX_MAX_SWAPCHAINMAX (4)
 #endif
-
 }
 #endif //INC_LGFX_CONFIG_H_
