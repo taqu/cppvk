@@ -11,7 +11,7 @@ int main(int /*argc*/, char** /*argv*/)
     {
         HINSTANCE hInstance = LGFX_NULL;
         if(FALSE == GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, NULL, &hInstance)){
-            return 0;
+            return EXIT_SUCCESS;
         }
         lgfx::Window::InitParam initParam = {
             hInstance,
@@ -23,12 +23,11 @@ int main(int /*argc*/, char** /*argv*/)
             true,
         };
         if(!window.create(initParam)){
-            return 0;
+            return EXIT_SUCCESS;
         }
     }
 
     //---------------------------------------------------------------------
-    lgfx::System system;
     {
         lgfx::BuilderVulkan builder;
 
@@ -66,10 +65,11 @@ int main(int /*argc*/, char** /*argv*/)
             static_cast<lgfx::u32>(viewSize.y_),
         };
 
-        if(!system.initialize(builder)){
+        if(!lgfx::System::initialize(builder, LGFX_NULL)){
             fprintf(stderr, "Fail to initialize\n");
-            return 0;
+            return EXIT_SUCCESS;
         }
+        lgfx::System& system = lgfx::System::instance();
 
         // Enumerate Physical Devices
         //---------------------------------------------------------------------
@@ -79,9 +79,9 @@ int main(int /*argc*/, char** /*argv*/)
             printPhysicalDevice(physicalDevices[i]);
         }
     }
-    system.terminate();
+    lgfx::System::terminate();
     window.destroy();
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 void printPhysicalDevice(lgfx::PhysicalDevice device)

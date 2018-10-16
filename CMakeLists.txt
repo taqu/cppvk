@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.6)
+cmake_minimum_required(VERSION 3.12)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug" "Release")
 
@@ -37,5 +37,5 @@ elseif(APPLE)
 endif()
 
 add_subdirectory(sample00)
-#add_subdirectory(sample01)
+add_subdirectory(sample01)
 #add_subdirectory(sample02)

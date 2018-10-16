@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.6)
+cmake_minimum_required(VERSION 3.12)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug" "Release")
 
@@ -7,8 +7,8 @@ project(${ProjectName})
 
 include_directories(AFTER ${CMAKE_CURRENT_SOURCE_DIR})
 
-set(HEADERS "../vk_platform.h;../vulkan.h;../lgfx_config.h;../lgfx.h;../lvk.h;../Window.h")
-set(SOURCES "../cppvk.cpp;../Window.cpp;sample01.cpp;")
+set(HEADERS ${COMMON_HEADERS})
+set(SOURCES "sample01.cpp" ${COMMON_SOURCES})
 
 source_group("include" FILES ${HEADERS})
 source_group("src" FILES ${SOURCES})
