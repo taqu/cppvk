@@ -1,7 +1,10 @@
 #include <stdio.h>
-#define LGFX_IMPLEMENTATION
 #include "lgfx.h"
+#include "Application.h"
+#include "Window.h"
+#include "Core.h"
 
+#ifdef LGFX_VULKAN
 void printPhysicalDevice(lgfx::PhysicalDevice device);
 
 int main(int /*argc*/, char** /*argv*/)
@@ -316,3 +319,347 @@ void printPhysicalDevice(lgfx::PhysicalDevice device)
         }
     }
 }
+#endif
+
+#ifdef LGFX_DX12
+
+class Sample00 : public lapp::Application
+{
+public:
+    static const lgfx::s32 MaxBackCounts = 2;
+
+    Sample00();
+    ~Sample00();
+    virtual bool initialize(lapp::InitParam& initParam);
+    virtual void terminate();
+
+    virtual bool update();
+
+    virtual lgfx::Window& getWindow();
+
+protected:
+    struct Vertex
+    {
+        lapp::Vector3 position_;
+        lapp::Vector4 color_;
+    };
+
+    bool populateCommandList();
+    void waitForPreviousFrame();
+
+    lgfx::Window window_;
+    lgfx::f32 aspect_;
+    lgfx::Viewport viewport_;
+    lgfx::RectS32 scissor_;
+
+    lgfx::Factory factory_;
+    lgfx::Adapter adapter_;
+    lgfx::Device device_;
+    lgfx::CommandQueue commandQueue_;
+    lgfx::SwapChain swapchain_;
+    lgfx::DescriptorHeap rtvHeap_;
+    lgfx::u32 rtvDescriptorSize_;
+
+    lgfx::Resource backBuffers_[MaxBackCounts];
+
+    lgfx::CommandAllocator commandAllocator_;
+    lgfx::RootSignature rootSignature_;
+
+    lgfx::PipelineState pipelineState_;
+    lgfx::GraphicsCommandList graphicsCommandList_;
+
+    lgfx::VertexBufferView vertexBufferView_;
+    lgfx::VertexBuffer vertexBuffer_;
+
+    lgfx::u32 frameIndex_;
+    HANDLE fenceEvent_;
+    lgfx::Fence fence_;
+    lgfx::u64 fenceValue_;
+};
+
+Sample00::Sample00()
+    :aspect_(1.0f)
+    ,rtvDescriptorSize_(0)
+    ,frameIndex_(0)
+    ,fenceEvent_(LGFX_NULL)
+    ,fenceValue_(0)
+{}
+
+Sample00::~Sample00()
+{}
+
+bool Sample00::initialize(lapp::InitParam& initParam)
+{
+    HINSTANCE hInstance = LGFX_NULL;
+    if(FALSE == GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, NULL, &hInstance)){
+        return false;
+    }
+    initParam.windowParam_.instance_ = hInstance;
+    if(!window_.create(initParam.windowParam_)){
+        return false;
+    }
+    aspect_ = static_cast<lgfx::f32>(initParam.graphicsParam_.height_)/initParam.graphicsParam_.width_;
+    viewport_ = {0.0f, 0.0f, static_cast<lgfx::f32>(initParam.graphicsParam_.width_), static_cast<lgfx::f32>(initParam.graphicsParam_.height_), lgfx::DefaultMinDepth, lgfx::DefaultMaxDepth};
+    scissor_ = {0, 0, static_cast<lgfx::s32>(initParam.windowParam_.width_), static_cast<lgfx::s32>(initParam.windowParam_.height_)};
+
+    //Load pipeline
+    factory_ = lgfx::Factory::create();
+    adapter_ = lgfx::Adapter::create(factory_, lgfx::FeatureLevel_11_0);
+    device_ = lgfx::Device::create(adapter_, lgfx::FeatureLevel_11_0);
+    commandQueue_ = lgfx::CommandQueue::create(device_, lgfx::CommandListType_Direct);
+    swapchain_ = lgfx::SwapChain::create(factory_, commandQueue_, window_.getHandle(), MaxBackCounts, initParam.graphicsParam_.width_, initParam.graphicsParam_.height_, lgfx::Format_R8G8B8A8_UNORM, lgfx::Usage_RenderTargetOutput, lgfx::SwapEffect_FlipDiscard, 0, lgfx::MWA_NO_ALT_ENTER);
+    rtvHeap_ = lgfx::DescriptorHeap::create(device_, lgfx::DescriptorHeapType_RTV, MaxBackCounts, lgfx::DescriptorHeapFlag_None);
+
+    {//Create frame resources.
+        rtvDescriptorSize_ = device_->GetDescriptorHandleIncrementSize(static_cast<D3D12_DESCRIPTOR_HEAP_TYPE>(lgfx::DescriptorHeapType_RTV));
+        lgfx::CPUDesctiptorHandle cpuDescriptorHandle(rtvHeap_->GetCPUDescriptorHandleForHeapStart());
+
+        ID3D12Resource* resources[MaxBackCounts];
+        for(lgfx::u32 i=0; i<MaxBackCounts; ++i){
+            if(FAILED(swapchain_->GetBuffer(i, IID_PPV_ARGS(&resources[i])))){
+                return false;
+            }
+            device_->CreateRenderTargetView(resources[i], LGFX_NULL, cpuDescriptorHandle);
+            cpuDescriptorHandle.offset(1, rtvDescriptorSize_);
+            backBuffers_[i] = lgfx::move(lgfx::Resource(resources[i]));
+        }
+    }
+
+    commandAllocator_ = lgfx::CommandAllocator::create(device_, lgfx::CommandListType_Direct);
+
+    //Load resources
+    lgfx::RootSignatureDesc rootSignatureDesc =
+    {
+        0,
+        LGFX_NULL,
+        0,
+        LGFX_NULL,
+        lgfx::RootSignatureFlags_AllowInputAssemblerInputLayout,
+    };
+    rootSignature_ = lgfx::RootSignature::create(device_, rootSignatureDesc);
+
+    lgfx::Blob blobVS = lgfx::Blob::loadFileAll("../../assets/shader_vs_d.so");
+    lgfx::Blob blobPS = lgfx::Blob::loadFileAll("../../assets/shader_ps_d.so");
+
+    lgfx::PipelineState::stream_output_desc_type streamOutputDesc = lgfx::StreamOutputDesc::create();
+    lgfx::PipelineState::blend_desc_type blendDesc = lgfx::BlendDesc::create();
+    lgfx::PipelineState::rasterizer_desc_type rasterizerDesc = lgfx::RasterizerDesc::SolidCW;
+    lgfx::PipelineState::depth_stencil_desc_type descStencilDesc = lgfx::DepthStencilDesc::Disable;//lgfx::DepthStencilDesc::Depth;
+    lgfx::PipelineState::input_element_desc_type inputElementDescs[] =
+    {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    };
+    lgfx::PipelineState::input_layout_desc_type inputLayoutDesc ={
+        inputElementDescs,
+        2,
+    };
+
+    lgfx::RenderTargetFormat renderFormats = lgfx::RenderTargetFormat::create(lgfx::Format_R8G8B8A8_UNORM);
+    lgfx::CachedPipelineState::desc_type cachedPipelineState = lgfx::CachedPipelineState::create();
+
+    pipelineState_ = lgfx::PipelineState::create(
+        device_,
+        rootSignature_,
+        &blobVS,
+        &blobPS,
+        LGFX_NULL,
+        LGFX_NULL,
+        LGFX_NULL,
+        streamOutputDesc,
+        blendDesc,
+        0xFFFFFFFFU,
+        rasterizerDesc,
+        descStencilDesc,
+        inputLayoutDesc,
+        lgfx::IndexBufferStripCutValue_Disabled,
+        lgfx::PrimitiveTopologyType_Triangle,
+        1,
+        renderFormats.formats_,
+        lgfx::Format_UNKNOWN, //lgfx::Format_D24_UNORM_S8_UINT,
+        {1, 0},
+        0,
+        cachedPipelineState,
+        lgfx::PipelineStateFlag_None
+    );
+
+    graphicsCommandList_ = lgfx::GraphicsCommandList::create(device_, 0, lgfx::CommandListType_Direct, commandAllocator_, pipelineState_);
+    //There is nothing to record into the command list. So close it now.
+    graphicsCommandList_->Close();
+
+    {
+        Vertex vertices[] =
+        {
+            {{0.0f, 0.25f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+            {{0.25f, -0.25f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+            {{-0.25f, -0.25f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
+        };
+
+        lapp::u32 size = sizeof(vertices);
+
+        lgfx::HeapPropertiesDesc::desc_type heapPropDesc = lgfx::HeapPropertiesDesc::create(lgfx::HeapType_Upload);
+        lgfx::ResourceDesc::desc_type resourceDesc = lgfx::ResourceDesc::buffer(size);
+        if(!device_.createCommittedResource(
+            &heapPropDesc,
+            lgfx::HeapFlag_None,
+            &resourceDesc,
+            lgfx::ResourceState_GenericRead,
+            LGFX_NULL,
+            vertexBuffer_)){
+            return false;
+        }
+
+        lgfx::u8* vertexData = LGFX_NULL;
+        lgfx::Range range = {0, 0};
+        if(!vertexBuffer_.map(0, &range, &vertexData)){
+            return false;
+        }
+        memcpy(vertexData, vertices, size);
+        vertexBuffer_.unmap(0, LGFX_NULL);
+
+        vertexBufferView_.bufferLocation_ = vertexBuffer_->GetGPUVirtualAddress();
+        vertexBufferView_.sizeInBytes_ = size;
+        vertexBufferView_.strideInBytes_ = sizeof(Vertex);
+    }
+
+    //Create synchronization objects and wait until assets have been uploaded to the GPU.
+    {
+        fence_ = lgfx::Fence::create(device_, 0, lgfx::FenceFlag_None);
+        fenceValue_ = 1;
+        fenceEvent_ = CreateEvent(LGFX_NULL, FALSE, FALSE, LGFX_NULL);
+        if(LGFX_NULL == fenceEvent_){
+            return false;
+        }
+    }
+    waitForPreviousFrame();
+    return true;
+}
+
+void Sample00::terminate()
+{
+    waitForPreviousFrame();
+    CloseHandle(fenceEvent_);
+    fenceEvent_ = LGFX_NULL;
+    window_.destroy();
+}
+
+bool Sample00::update()
+{
+    if(!window_.peekEvent()){
+        return false;
+    }
+    // Record all the commands we need to render the scene into the command list.
+    populateCommandList();
+
+    // Execute the command list.
+    ID3D12CommandList* ppCommandLists[] ={graphicsCommandList_};
+    commandQueue_->ExecuteCommandLists(1, ppCommandLists);
+
+    // Present the frame.
+    swapchain_->Present(1, 0);
+
+    waitForPreviousFrame();
+    return true;
+}
+
+lgfx::Window& Sample00::getWindow()
+{
+    return window_;
+}
+
+bool Sample00::populateCommandList()
+{
+    // Command list allocators can only be reset when the associated 
+    // command lists have finished execution on the GPU; apps should use 
+    // fences to determine GPU execution progress.
+    if(FAILED(commandAllocator_->Reset())){
+        return false;
+    }
+
+    // However, when ExecuteCommandList() is called on a particular command 
+    // list, that command list can then be reset at any time and must be before 
+    // re-recording.
+    if(FAILED(graphicsCommandList_->Reset(commandAllocator_, pipelineState_))){
+        return false;
+    }
+
+    // Set necessary state.
+    graphicsCommandList_->SetGraphicsRootSignature(rootSignature_);
+    graphicsCommandList_->RSSetViewports(1, reinterpret_cast<const D3D12_VIEWPORT*>(&viewport_));
+    graphicsCommandList_->RSSetScissorRects(1, reinterpret_cast<const D3D12_RECT*>(&scissor_));
+
+    // Indicate that the back buffer will be used as a render target.
+    lgfx::ResourceBarrier::desc_type resourceBarrierDesc = lgfx::ResourceBarrier::transition(backBuffers_[frameIndex_], lgfx::ResourceState_Present, lgfx::ResourceState_RenderTarget);
+    graphicsCommandList_->ResourceBarrier(1, &resourceBarrierDesc);
+
+    lgfx::CPUDesctiptorHandle rtvHandle = lgfx::CPUDesctiptorHandle(rtvHeap_->GetCPUDescriptorHandleForHeapStart(), frameIndex_, rtvDescriptorSize_);
+    graphicsCommandList_->OMSetRenderTargets(1, &rtvHandle, FALSE, LGFX_NULL);
+
+    // Record commands.
+    const lgfx::f32 clearColor[] = {0.0f, 0.2f, 0.4f, 1.0f};
+    graphicsCommandList_->ClearRenderTargetView(rtvHandle, clearColor, 0, LGFX_NULL);
+    graphicsCommandList_->IASetPrimitiveTopology(static_cast<D3D_PRIMITIVE_TOPOLOGY>(lgfx::PrimitiveTopology_TriangleList));
+    graphicsCommandList_->IASetVertexBuffers(0, 1, reinterpret_cast<const D3D12_VERTEX_BUFFER_VIEW*>(&vertexBufferView_));
+    graphicsCommandList_->DrawInstanced(3, 1, 0, 0);
+
+    // Indicate that the back buffer will now be used to present.
+    resourceBarrierDesc = lgfx::ResourceBarrier::transition(backBuffers_[frameIndex_], lgfx::ResourceState_RenderTarget, lgfx::ResourceState_Present);
+    graphicsCommandList_->ResourceBarrier(1, &resourceBarrierDesc);
+    return SUCCEEDED(graphicsCommandList_->Close());
+}
+
+void Sample00::waitForPreviousFrame()
+{
+    // WAITING FOR THE FRAME TO COMPLETE BEFORE CONTINUING IS NOT BEST PRACTICE.
+    // This is code implemented as such for simplicity. The D3D12HelloFrameBuffering
+    // sample illustrates how to use fences for efficient resource usage and to
+    // maximize GPU utilization.
+
+    //Signal and increment the fence value
+    const lgfx::u64 fenceValue = fenceValue_;
+    if(FAILED(commandQueue_->Signal(fence_, fenceValue))){
+        return;
+    }
+    ++fenceValue_;
+
+    //Wait until the previous frame is finished.
+    if(fence_->GetCompletedValue()<fenceValue){
+        fence_->SetEventOnCompletion(fenceValue, fenceEvent_);
+        WaitForSingleObject(fenceEvent_, INFINITE);
+    }
+    frameIndex_ = swapchain_->GetCurrentBackBufferIndex();
+}
+
+int main(int /*argc*/, char** /*argv*/)
+{
+    //---------------------------------------------------------------------
+    const lgfx::s32 width = 400;
+    const lgfx::s32 height = 300;
+    const lgfx::s32 backCount = 2;
+
+    {
+        lapp::InitParam initParam;
+        initParam.windowParam_ = {
+            LGFX_NULL,
+            width,
+            height,
+            0,0,
+            LGFX_NULL,
+            "Tutorial",
+            true,
+        };
+        initParam.graphicsParam_ ={
+            width,
+            height,
+        };
+
+        if(!lapp::Core::initialize(initParam, LAPP_NEW Sample00)){
+            return EXIT_FAILURE;
+        }
+    }
+
+    lapp::Core::update();
+    lapp::Core::terminate();
+    return EXIT_SUCCESS;
+}
+#endif
